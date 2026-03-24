@@ -1,0 +1,25 @@
+{
+  "query": "SELECT id, name, appRole FROM users;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3vb1PBRPY3p29Qk.root --database 3zTVFkK7WamLni5v3npzbE --execute SELECT id, name, appRole FROM users;",
+  "rows": [
+    {
+      "id": "1",
+      "name": "Yoiner Edwardo Torres",
+      "appRole": "CUSTOMER"
+    },
+    {
+      "id": "9",
+      "name": "Carlos Rodríguez",
+      "appRole": "DRIVER"
+    },
+    {
+      "id": "20",
+      "name": "Laura Zapata",
+      "appRole": "CUSTOMER"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tappRole\n1\tYoiner Edwardo Torres\tCUSTOMER\n9\tCarlos Rodríguez\tDRIVER\n20\tLaura Zapata\tCUSTOMER\n",
+  "stderr": "",
+  "execution_time_ms": 68
+}

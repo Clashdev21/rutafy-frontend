@@ -1,0 +1,378 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* PORTEX Design System - Neo-Industrial Portuario */
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  
+  /* PORTEX Custom Colors */
+  --color-navy: #1E3A5F;
+  --color-navy-light: #2D4A6F;
+  --color-navy-dark: #152A4A;
+  --color-teal: #2A9D8F;
+  --color-teal-light: #3DB5A6;
+  --color-teal-dark: #1F7A6F;
+  --color-success: #38A169;
+  --color-warning: #ECC94B;
+  --color-error: #E53E3E;
+}
+
+:root {
+  /* PORTEX Brand Colors */
+  --primary: #2A9D8F;
+  --primary-foreground: #FFFFFF;
+  --sidebar-primary: #1E3A5F;
+  --sidebar-primary-foreground: #FFFFFF;
+  
+  /* Chart colors - Teal gradient */
+  --chart-1: #2A9D8F;
+  --chart-2: #3DB5A6;
+  --chart-3: #1F7A6F;
+  --chart-4: #1E3A5F;
+  --chart-5: #2D4A6F;
+  
+  --radius: 0.75rem;
+  
+  /* Light theme - Clean and professional */
+  --background: #F5F7FA;
+  --foreground: #1E3A5F;
+  --card: #FFFFFF;
+  --card-foreground: #1E3A5F;
+  --popover: #FFFFFF;
+  --popover-foreground: #1E3A5F;
+  --secondary: #E8ECF1;
+  --secondary-foreground: #4A5568;
+  --muted: #E8ECF1;
+  --muted-foreground: #64748B;
+  --accent: #E0F2F1;
+  --accent-foreground: #1E3A5F;
+  --destructive: #E53E3E;
+  --destructive-foreground: #FFFFFF;
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --ring: #2A9D8F;
+  --sidebar: #1E3A5F;
+  --sidebar-foreground: #FFFFFF;
+  --sidebar-accent: #2D4A6F;
+  --sidebar-accent-foreground: #FFFFFF;
+  --sidebar-border: #2D4A6F;
+  --sidebar-ring: #2A9D8F;
+}
+
+.dark {
+  --primary: #3DB5A6;
+  --primary-foreground: #FFFFFF;
+  --sidebar-primary: #2A9D8F;
+  --sidebar-primary-foreground: #FFFFFF;
+  --background: #0F172A;
+  --foreground: #F1F5F9;
+  --card: #1E293B;
+  --card-foreground: #F1F5F9;
+  --popover: #1E293B;
+  --popover-foreground: #F1F5F9;
+  --secondary: #334155;
+  --secondary-foreground: #E2E8F0;
+  --muted: #334155;
+  --muted-foreground: #94A3B8;
+  --accent: #1E3A5F;
+  --accent-foreground: #F1F5F9;
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+  --border: #334155;
+  --input: #334155;
+  --ring: #3DB5A6;
+  --chart-1: #3DB5A6;
+  --chart-2: #2A9D8F;
+  --chart-3: #1F7A6F;
+  --chart-4: #2D4A6F;
+  --chart-5: #1E3A5F;
+  --sidebar: #1E293B;
+  --sidebar-foreground: #F1F5F9;
+  --sidebar-accent: #334155;
+  --sidebar-accent-foreground: #F1F5F9;
+  --sidebar-border: #334155;
+  --sidebar-ring: #3DB5A6;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Prevent pull-to-refresh on mobile */
+    overscroll-behavior-y: contain;
+  }
+
+  h1, h2 {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [type="button"]:not(:disabled),
+  [type="submit"]:not(:disabled),
+  [type="reset"]:not(:disabled),
+  a[href],
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled) {
+    @apply cursor-pointer;
+  }
+  
+  /* Mobile-specific optimizations */
+  html {
+    /* Prevent text size adjustment on orientation change */
+    -webkit-text-size-adjust: 100%;
+    /* Smooth scrolling */
+    scroll-behavior: smooth;
+  }
+  
+  /* Safe area insets for notched devices */
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .safe-left {
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+  .safe-right {
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+}
+
+@layer components {
+  .container {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .flex {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  @media (min-width: 640px) {
+    .container {
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .container {
+      padding-left: 2rem;
+      padding-right: 2rem;
+      max-width: 1280px;
+    }
+  }
+  
+  /* Mobile App Shell */
+  .mobile-shell {
+    @apply min-h-screen flex flex-col;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+  
+  /* Bottom Tab Bar */
+  .tab-bar {
+    @apply fixed bottom-0 left-0 right-0 bg-white border-t border-border;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    z-index: 50;
+  }
+  
+  /* Floating Action Button */
+  .fab {
+    @apply fixed z-40 w-14 h-14 rounded-full shadow-lg flex items-center justify-center;
+    @apply bg-[#2A9D8F] text-white;
+    @apply active:scale-95 transition-transform;
+    bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+    right: 16px;
+  }
+  
+  /* Card with shadow */
+  .card-elevated {
+    @apply bg-card rounded-xl shadow-md;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+  }
+  
+  /* Status badges */
+  .badge-success {
+    @apply bg-green-100 text-green-800 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+  .badge-warning {
+    @apply bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+  .badge-error {
+    @apply bg-red-100 text-red-800 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+  .badge-info {
+    @apply bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+  
+  /* Touch-friendly button */
+  .btn-touch {
+    @apply min-h-[48px] min-w-[48px] flex items-center justify-center;
+    @apply active:scale-95 transition-transform duration-150;
+  }
+  
+  /* Pull indicator */
+  .pull-indicator {
+    @apply w-10 h-1 bg-gray-300 rounded-full mx-auto;
+  }
+  
+  /* Map overlay card */
+  .map-card {
+    @apply absolute left-4 right-4 bg-white rounded-2xl shadow-xl;
+    @apply p-4;
+  }
+  
+  /* Input with icon */
+  .input-with-icon {
+    @apply relative;
+  }
+  .input-with-icon input {
+    @apply pl-10;
+  }
+  .input-with-icon .icon {
+    @apply absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground;
+  }
+  
+  /* Skeleton loading */
+  .skeleton {
+    @apply animate-pulse bg-gray-200 rounded;
+  }
+  
+  /* Slide up animation */
+  @keyframes slideUp {
+    from {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+  
+  /* Fade in animation */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  .animate-fade-in {
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  /* Rutafy logo pulse - sutil y profesional */
+  @keyframes rutafyPulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.92;
+    }
+  }
+
+  .animate-rutafy-pulse {
+    animation: rutafyPulse 3s ease-in-out infinite;
+  }
+  
+  /* Pulse animation for active states */
+  @keyframes pulse-ring {
+    0% {
+      transform: scale(0.8);
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1.4);
+      opacity: 0;
+    }
+  }
+  
+  .pulse-ring::before {
+    content: '';
+    @apply absolute inset-0 rounded-full;
+    animation: pulse-ring 1.5s ease-out infinite;
+  }
+}
+
+/* Utility for hiding scrollbar but keeping functionality */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Touch highlight color */
+* {
+  -webkit-tap-highlight-color: rgba(42, 157, 143, 0.1);
+}
+
+/* Prevent zoom on input focus (iOS) */
+@media screen and (max-width: 768px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="password"],
+  input[type="number"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

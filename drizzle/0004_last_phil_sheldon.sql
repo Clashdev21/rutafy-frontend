@@ -1,0 +1,1 @@
+ALTER TABLE `services` ADD `serviceMode` enum('EMPRESA','LIBRE') DEFAULT 'LIBRE' NOT NULL;

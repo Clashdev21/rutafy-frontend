@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1770091224493,
+      "tag": "0000_blue_loa",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1770091277569,
+      "tag": "0001_pink_talos",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1770254710525,
+      "tag": "0002_migrate_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1770255688871,
+      "tag": "0003_mixed_proteus",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1770257664866,
+      "tag": "0004_last_phil_sheldon",
+      "breakpoints": true
+    }
+  ]
+}
