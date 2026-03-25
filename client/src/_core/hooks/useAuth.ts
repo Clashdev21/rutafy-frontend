@@ -58,7 +58,7 @@ export function useAuth(options?: UseAuthOptions) {
       setUser(null);
       setError(e);
       if (axios.isAxiosError(e) && e.response?.status === 401) {
-        clearToken();
+        console.warn("401 en /me, no se limpia token automáticamente");
       }
     } finally {
       setLoading(false);
