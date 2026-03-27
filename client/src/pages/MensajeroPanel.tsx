@@ -29,7 +29,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { acceptServiceOffer, getActiveOffersByMessenger } from "@/api/services";
+import { http } from "@/api/http";
+import {
+  acceptServiceOffer,
+  getActiveOffersByMessenger,
+  patchMessengerAvailability,
+} from "@/api/services";
 
 type ServiceStatus =
   | "REQUESTED"
@@ -304,24 +309,6 @@ async function apiPost<T>(path: string, body: Record<string, any>): Promise<T> {
   return payload as T;
 }
 
-async function apiPostFormData<T>(path: string, formData: FormData): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers: {
-      "x-trace-id": buildTraceId("upload"),
-    },
-    body: formData,
-  });
-
-  const payload = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    throw new Error(normalizeErrorMessage(payload, "No se pudo subir la evidencia"));
-  }
-
-  return payload as T;
-}
-
 function isObject(value: unknown): value is Record<string, any> {
   return typeof value === "object" && value !== null;
 }
@@ -333,6 +320,15 @@ function extractOffersArray(payload: any): DispatchOfferLike[] {
     return payload.data.offers as DispatchOfferLike[];
   }
   if (isObject(payload) && Array.isArray(payload.data)) return payload.data as DispatchOfferLike[];
+  /** Backend real: { ok: true, offer: { offer_id, service_id, status, ... } } */
+  if (
+    isObject(payload) &&
+    payload.offer != null &&
+    typeof payload.offer === "object" &&
+    !Array.isArray(payload.offer)
+  ) {
+    return [payload.offer as DispatchOfferLike];
+  }
   return [];
 }
 
@@ -369,6 +365,7 @@ export default function MensajeroPanel() {
   const [, setLocation] = useLocation();
 
   const [isOnline, setIsOnline] = useState(false);
+  const [availabilitySyncing, setAvailabilitySyncing] = useState(false);
   const [selectedService, setSelectedService] = useState<BackendService | null>(null);
   const [closePin, setClosePin] = useState("");
   const [validationError, setValidationError] = useState("");
@@ -511,7 +508,7 @@ export default function MensajeroPanel() {
     }
   }, [isOnline, actorId]);
 
-  const loadServiceEvidences = useCallback(async (serviceId: string) => {
+  const loadServiceEvidences = useCallback(async (serviceId: string, silent = false) => {
     setLoadingEvidenceServiceId(serviceId);
     try {
       const data = await apiGet<{ evidences: ServiceEvidence[] }>(
@@ -523,7 +520,11 @@ export default function MensajeroPanel() {
         [serviceId]: Array.isArray(data?.evidences) ? data.evidences : [],
       }));
     } catch (error: any) {
-      toast.error(error.message || "No se pudieron cargar las evidencias");
+      if (!silent) {
+        toast.error(error.message || "No se pudieron cargar las evidencias");
+      }
+      // Error auxiliar: no debe romper ni confundir flujo principal (accept/start/close).
+      console.error("[MensajeroPanel] Evidences load error", { serviceId, error });
     } finally {
       setLoadingEvidenceServiceId(null);
     }
@@ -549,9 +550,22 @@ export default function MensajeroPanel() {
   useEffect(() => {
     const targetServiceId = selectedService?.service_id;
     if (targetServiceId) {
-      loadServiceEvidences(targetServiceId);
+      loadServiceEvidences(targetServiceId, true);
     }
   }, [selectedService?.service_id, loadServiceEvidences]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!isOnline) return;
+    if (!actorId || !isValidUuid(actorId)) return;
+
+    const timer = window.setInterval(() => {
+      refreshMyServices();
+      refreshAvailableServices();
+    }, 15000);
+
+    return () => window.clearInterval(timer);
+  }, [loading, isOnline, actorId, refreshMyServices, refreshAvailableServices]);
 
   useEffect(() => {
     return () => {
@@ -560,6 +574,31 @@ export default function MensajeroPanel() {
       }
     };
   }, [evidencePreviewUrl]);
+
+  const handleToggleAvailability = useCallback(async () => {
+    if (!actorId || !isValidUuid(actorId)) {
+      toast.error("No hay Mensajero ID válido para actualizar disponibilidad");
+      return;
+    }
+
+    const nextOnline = !isOnline;
+    const availability_status = nextOnline ? "AVAILABLE" : "OFFLINE";
+
+    setAvailabilitySyncing(true);
+    try {
+      await patchMessengerAvailability(actorId, availability_status);
+      setIsOnline(nextOnline);
+      toast.success(
+        nextOnline
+          ? "Disponible para ofertas"
+          : "Desconectado: no recibirás ofertas nuevas",
+      );
+    } catch (error: any) {
+      toast.error(restErrorMessage(error, "No se pudo actualizar la disponibilidad"));
+    } finally {
+      setAvailabilitySyncing(false);
+    }
+  }, [actorId, isOnline]);
 
   const handleLogout = async () => {
     await logout();
@@ -657,6 +696,45 @@ export default function MensajeroPanel() {
     }
   };
 
+  const handleCancelService = async (service: BackendService) => {
+    if (!actorId) return;
+
+    const reason = window.prompt("Motivo de cancelación:");
+    if (!reason) return;
+
+    try {
+      await apiPost(`/v1/services/${service.service_id}/cancel-by-messenger`, {
+        actor_role: "mensajero",
+        actor_id: actorId,
+        reason,
+      });
+
+      await refreshMyServices();
+      await refreshAvailableServices();
+    } catch (e: any) {
+      alert(restErrorMessage(e, "No se pudo cancelar el servicio"));
+    }
+  };
+
+  const handleReportIncident = async (service: BackendService) => {
+    if (!actorId) return;
+
+    const reason = window.prompt("Describe el inconveniente:");
+    if (!reason) return;
+
+    try {
+      await apiPost(`/v1/services/${service.service_id}/report-incident`, {
+        actor_role: "mensajero",
+        actor_id: actorId,
+        reason,
+      });
+
+      await refreshMyServices();
+    } catch (e: any) {
+      alert(restErrorMessage(e, "No se pudo reportar el inconveniente"));
+    }
+  };
+
   const handleRequestLocation = () => {
     if (!navigator.geolocation) {
       toast.error("Este dispositivo no soporta geolocalización");
@@ -740,14 +818,14 @@ export default function MensajeroPanel() {
         formData.append("lng", String(currentLng));
       }
 
-      await apiPostFormData(`/v1/services/${service.service_id}/evidences`, formData);
+      await http.post(`/v1/services/${service.service_id}/evidences`, formData);
 
       toast.success("Evidencia subida correctamente");
       clearEvidenceDraft();
       await loadServiceEvidences(service.service_id);
       return true;
     } catch (error: any) {
-      toast.error(error.message || "No se pudo subir la evidencia");
+      toast.error(restErrorMessage(error, "No se pudo subir la evidencia"));
       return false;
     } finally {
       setUploadingEvidenceServiceId(null);
@@ -758,7 +836,7 @@ export default function MensajeroPanel() {
     setSelectedService(service);
     setClosePin("");
     setValidationError("");
-    await loadServiceEvidences(service.service_id);
+    await loadServiceEvidences(service.service_id, true);
   };
 
   const handleCloseService = async () => {
@@ -792,6 +870,7 @@ export default function MensajeroPanel() {
       await apiPost(`/v1/services/${selectedService.service_id}/close`, {
         actor_role: "mensajero",
         actor_id: actorId,
+        messenger_id: actorId,
         close_pin: closePin.trim(),
       });
 
@@ -799,7 +878,7 @@ export default function MensajeroPanel() {
       setClosePin("");
       setSelectedService(null);
       clearEvidenceDraft();
-      await refreshMyServices();
+      await Promise.all([refreshMyServices(), refreshAvailableServices()]);
     } catch (error: any) {
       if (error.message === "invalid_close_pin") {
         setValidationError("PIN incorrecto.");
@@ -992,13 +1071,22 @@ export default function MensajeroPanel() {
                 <div className="flex items-center gap-2 rounded-lg border px-2 py-1 bg-white">
                   <span className="text-xs text-gray-500">Estado</span>
                   <button
-                    onClick={() => setIsOnline(!isOnline)}
-                    className={`p-1 rounded-lg transition-colors ${
+                    type="button"
+                    onClick={() => void handleToggleAvailability()}
+                    disabled={
+                      availabilitySyncing ||
+                      !actorId ||
+                      !isValidUuid(actorId) ||
+                      loading
+                    }
+                    className={`p-1 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                       isOnline ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-400"
                     }`}
                     aria-label={isOnline ? "Desconectarse" : "Conectarse"}
                   >
-                    {isOnline ? (
+                    {availabilitySyncing ? (
+                      <Loader2 className="w-8 h-8 animate-spin" aria-hidden />
+                    ) : isOnline ? (
                       <ToggleRight className="w-8 h-8" />
                     ) : (
                       <ToggleLeft className="w-8 h-8" />
@@ -1062,34 +1150,52 @@ export default function MensajeroPanel() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {dispatchCurrentService.status === "CLAIMED" && (
-                    <Button
-                      size="sm"
-                      onClick={() => handleStartService(dispatchCurrentService)}
-                      disabled={startingServiceId === dispatchCurrentService.service_id}
-                      className="bg-[#2A9D8F] hover:bg-[#238b7e]"
-                    >
-                      {startingServiceId === dispatchCurrentService.service_id ? (
-                        <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                      ) : null}
-                      Iniciar servicio
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={() => handleStartService(dispatchCurrentService)}
+                        disabled={startingServiceId === dispatchCurrentService.service_id}
+                        className="bg-[#2A9D8F] hover:bg-[#238b7e]"
+                      >
+                        {startingServiceId === dispatchCurrentService.service_id ? (
+                          <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                        ) : null}
+                        Iniciar servicio
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => void handleCancelService(dispatchCurrentService)}
+                      >
+                        Cancelar servicio
+                      </Button>
+                    </>
                   )}
                   {dispatchCurrentService.status === "STARTED" && (
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        setSelectedService(dispatchCurrentService);
-                        setTimeout(() => {
-                          document.getElementById("cierre-operativo")?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          });
-                        }, 100);
-                      }}
-                      className="bg-amber-500 hover:bg-amber-600"
-                    >
-                      Finalizar servicio
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setSelectedService(dispatchCurrentService);
+                          setTimeout(() => {
+                            document.getElementById("cierre-operativo")?.scrollIntoView({
+                              behavior: "smooth",
+                              block: "start",
+                            });
+                          }, 100);
+                        }}
+                        className="bg-amber-500 hover:bg-amber-600"
+                      >
+                        Finalizar servicio
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleReportIncident(dispatchCurrentService)}
+                      >
+                        Reportar inconveniente
+                      </Button>
+                    </>
                   )}
                 </div>
               </>
