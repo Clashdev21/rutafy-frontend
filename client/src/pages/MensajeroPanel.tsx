@@ -384,33 +384,54 @@ function OfflineView(props: { onToggle: () => void }) {
   );
 }
 
-function AvailableView() {
+function AvailableView(props: { onToggleOffline: () => void; onLogout: () => void }) {
   return (
-    <div className="min-h-screen bg-[#FFFFFF] flex flex-col items-center justify-center px-6 py-10 gap-8">
-      <span
-        className="rounded-full border border-[#2A9D8F]/25 bg-[#2A9D8F]/10 px-3 py-1 text-xs font-medium text-[#2A9D8F]"
-        aria-label="Estado"
-      >
-        En línea
-      </span>
-      <div className="relative flex h-28 w-28 shrink-0 items-center justify-center">
+    <div className="min-h-screen bg-[#FFFFFF] flex flex-col px-6 py-10">
+      <div className="mx-auto w-full max-w-sm flex items-center justify-between gap-3">
         <span
-          className="absolute inline-flex h-20 w-20 animate-ping rounded-full bg-[#2A9D8F]/25"
-          aria-hidden
-        />
-        <span
-          className="relative inline-flex h-16 w-16 animate-pulse rounded-full bg-[#2A9D8F]/20 ring-4 ring-[#2A9D8F]/15"
-          aria-hidden
-        />
-        <span className="absolute h-3 w-3 rounded-full bg-[#2A9D8F]" aria-hidden />
+          className="rounded-full border border-[#2A9D8F]/25 bg-[#2A9D8F]/10 px-3 py-1 text-xs font-medium text-[#2A9D8F]"
+          aria-label="Estado"
+        >
+          En línea
+        </span>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => props.onToggleOffline()}
+            className="h-8 rounded-full border-[#2A9D8F]/30 px-3 text-xs text-[#2A9D8F] hover:bg-[#2A9D8F]/10"
+          >
+            Pasar a offline
+          </Button>
+          <button
+            type="button"
+            onClick={() => props.onLogout()}
+            className="text-xs font-medium text-gray-500 hover:text-gray-700"
+          >
+            Salir
+          </button>
+        </div>
       </div>
-      <div className="flex max-w-sm flex-col items-center gap-2 text-center">
-        <h2 className="text-xl font-semibold leading-tight text-[#0F172A]">
-          Buscando servicios para ti
-        </h2>
-        <p className="text-sm leading-relaxed text-[#64748B]">
-          Te avisaremos en cuanto aparezca una oferta
-        </p>
+      <div className="flex flex-1 flex-col items-center justify-center gap-8">
+        <div className="relative flex h-28 w-28 shrink-0 items-center justify-center">
+          <span
+            className="absolute inline-flex h-20 w-20 animate-ping rounded-full bg-[#2A9D8F]/25"
+            aria-hidden
+          />
+          <span
+            className="relative inline-flex h-16 w-16 animate-pulse rounded-full bg-[#2A9D8F]/20 ring-4 ring-[#2A9D8F]/15"
+            aria-hidden
+          />
+          <span className="absolute h-3 w-3 rounded-full bg-[#2A9D8F]" aria-hidden />
+        </div>
+        <div className="flex max-w-sm flex-col items-center gap-2 text-center">
+          <h2 className="text-xl font-semibold leading-tight text-[#0F172A]">
+            Buscando servicios para ti
+          </h2>
+          <p className="text-sm leading-relaxed text-[#64748B]">
+            Te avisaremos en cuanto aparezca una oferta
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -1328,7 +1349,12 @@ export default function MensajeroPanel() {
     return <OfflineView onToggle={() => void handleToggleAvailability()} />;
   }
   if (uiState === "AVAILABLE") {
-    return <AvailableView />;
+    return (
+      <AvailableView
+        onToggleOffline={() => void handleToggleAvailability()}
+        onLogout={() => void handleLogout()}
+      />
+    );
   }
   if (uiState === "OFFER" && firstOffer) {
     return (
