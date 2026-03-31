@@ -35,3 +35,14 @@ export async function acceptServiceOffer(offerId: string, messengerId: string) {
   );
   return data;
 }
+
+export async function patchMessengerAvailability(
+  messengerId: string,
+  availability_status: "AVAILABLE" | "OFFLINE"
+) {
+  const { data } = await http.patch(
+    `/v1/messengers/${encodeURIComponent(messengerId)}/availability`,
+    { availability_status }
+  );
+  return data;
+}

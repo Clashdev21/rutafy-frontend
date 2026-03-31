@@ -27,7 +27,14 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { toast } from "sonner";
 import { http } from "@/api/http";
 import {
@@ -48,6 +55,8 @@ type ServiceStatus =
   | "FAILED_DROPOFF"
   | "NO_SHOW";
 
+type UiState = "OFFLINE" | "AVAILABLE" | "OFFER" | "ASSIGNED" | "IN_SERVICE";
+
 interface BackendService {
   service_id: string;
   status: ServiceStatus;
@@ -59,6 +68,7 @@ interface BackendService {
   meta?: Record<string, any> | null;
   origin?: string | null;
   destination?: string | null;
+  expires_at?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -75,6 +85,7 @@ type DispatchOfferLike = {
   mensajero_id?: string | null;
   origin?: string | null;
   destination?: string | null;
+  expires_at?: string | null;
   meta?: Record<string, any> | null;
   created_at?: string;
   updated_at?: string;
@@ -355,9 +366,374 @@ function mapOfferToBackendService(offer: DispatchOfferLike): BackendService | nu
     meta: (nested?.meta ?? offer.meta ?? null) as Record<string, any> | null,
     origin: (nested?.origin ?? offer.origin ?? null) as string | null,
     destination: (nested?.destination ?? offer.destination ?? null) as string | null,
+    expires_at: (nested?.expires_at ?? offer.expires_at ?? null) as string | null,
     created_at: nested?.created_at ?? offer.created_at,
     updated_at: nested?.updated_at ?? offer.updated_at,
   };
+}
+
+function OfflineView(props: { onToggle: () => void }) {
+  return (
+    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-6 gap-4">
+      <p className="text-lg font-semibold text-gray-900">Desconectado</p>
+      <p className="text-sm text-gray-500 text-center">Activa para recibir servicios</p>
+      <Button type="button" onClick={() => props.onToggle()} className="w-full max-w-sm bg-[#2A9D8F] hover:bg-[#238b7e]">
+        Ponerte en línea
+      </Button>
+    </div>
+  );
+}
+
+function AvailableView() {
+  return (
+    <div className="min-h-screen bg-[#FFFFFF] flex flex-col items-center justify-center px-6 py-10 gap-8">
+      <span
+        className="rounded-full border border-[#2A9D8F]/25 bg-[#2A9D8F]/10 px-3 py-1 text-xs font-medium text-[#2A9D8F]"
+        aria-label="Estado"
+      >
+        En línea
+      </span>
+      <div className="relative flex h-28 w-28 shrink-0 items-center justify-center">
+        <span
+          className="absolute inline-flex h-20 w-20 animate-ping rounded-full bg-[#2A9D8F]/25"
+          aria-hidden
+        />
+        <span
+          className="relative inline-flex h-16 w-16 animate-pulse rounded-full bg-[#2A9D8F]/20 ring-4 ring-[#2A9D8F]/15"
+          aria-hidden
+        />
+        <span className="absolute h-3 w-3 rounded-full bg-[#2A9D8F]" aria-hidden />
+      </div>
+      <div className="flex max-w-sm flex-col items-center gap-2 text-center">
+        <h2 className="text-xl font-semibold leading-tight text-[#0F172A]">
+          Buscando servicios para ti
+        </h2>
+        <p className="text-sm leading-relaxed text-[#64748B]">
+          Te avisaremos en cuanto aparezca una oferta
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function OfferView(props: {
+  offer: BackendService;
+  onAccept: () => Promise<void> | void;
+  isAccepting: boolean;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const expiresAtRaw = props.offer.expires_at;
+  const expiresAtMs =
+    expiresAtRaw != null && String(expiresAtRaw).trim() !== ""
+      ? Date.parse(String(expiresAtRaw))
+      : NaN;
+  const hasValidExpiry = Number.isFinite(expiresAtMs);
+
+  const remainingMs = hasValidExpiry ? Math.max(0, expiresAtMs - now) : 0;
+
+  const offerTimerKey = `${props.offer.service_id}\0${props.offer.expires_at ?? ""}`;
+  const totalMsRef = useRef<number | null>(null);
+  const offerTimerKeyRef = useRef<string>("");
+  if (offerTimerKeyRef.current !== offerTimerKey) {
+    offerTimerKeyRef.current = offerTimerKey;
+    totalMsRef.current = null;
+  }
+  if (totalMsRef.current === null) {
+    if (!hasValidExpiry) {
+      totalMsRef.current = 1;
+    } else {
+      const createdRaw = props.offer.created_at;
+      const createdAtMs =
+        createdRaw != null && String(createdRaw).trim() !== ""
+          ? Date.parse(String(createdRaw))
+          : NaN;
+      if (Number.isFinite(createdAtMs) && createdAtMs < expiresAtMs) {
+        totalMsRef.current = Math.max(1, expiresAtMs - createdAtMs);
+      } else {
+        totalMsRef.current = Math.max(1, expiresAtMs - Date.now());
+      }
+    }
+  }
+  const totalMs = totalMsRef.current ?? 1;
+  const progress = hasValidExpiry ? Math.min(100, Math.max(0, (remainingMs / totalMs) * 100)) : 0;
+
+  if (hasValidExpiry && remainingMs <= 0) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-white flex flex-col">
+      <div className="px-6 pt-8 pb-4 border-b border-gray-100">
+        <h2 className="text-2xl font-bold text-gray-900">Nueva oferta</h2>
+        <p className="text-sm text-gray-500 mt-1">Acepta antes de que expire</p>
+        {hasValidExpiry ? (
+          <>
+            <p className="text-sm font-medium text-gray-800 mt-3">
+              {`Expira en ${Math.max(0, Math.ceil(remainingMs / 1000))}s`}
+            </p>
+            <div className="mt-2 h-2 w-full rounded-full bg-gray-200 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-[#3A86FF] transition-[width] duration-300 ease-linear"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-gray-500 mt-3">Sin tiempo de expiración</p>
+        )}
+      </div>
+
+      <div className="flex-1 px-6 py-6 space-y-6">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-gray-400">Recoger en</p>
+          <p className="text-base font-medium text-gray-900 mt-1">
+            {props.offer.origin || "Origen no disponible"}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-xs uppercase tracking-wide text-gray-400">Entregar en</p>
+          <p className="text-base font-medium text-gray-900 mt-1">
+            {props.offer.destination || "Destino no disponible"}
+          </p>
+        </div>
+      </div>
+
+      <div className="px-6 pb-8 pt-4 border-t border-gray-100 space-y-3">
+        <Button
+          type="button"
+          disabled={props.isAccepting}
+          onClick={() => void props.onAccept()}
+          className="w-full bg-[#2A9D8F] hover:bg-[#238b7e] text-white disabled:opacity-70"
+        >
+          {props.isAccepting ? "Aceptando..." : "Aceptar"}
+        </Button>
+        <button type="button" className="w-full text-sm font-medium text-gray-500">
+          Omitir
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AssignedView(props: {
+  service: BackendService;
+  onStart: () => Promise<void> | void;
+  isStarting: boolean;
+}) {
+  return (
+    <div className="min-h-screen bg-orange-50 flex flex-col px-6 py-6">
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6">
+        <h1 className="text-2xl font-bold text-gray-900">Servicio asignado</h1>
+
+        <div className="space-y-5 rounded-xl border border-orange-100 bg-white p-5 shadow-sm">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Recoger en</p>
+            <p className="mt-1 text-base font-medium text-gray-900">
+              {props.service.origin || "Origen no disponible"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Entregar en</p>
+            <p className="mt-1 text-base font-medium text-gray-900">
+              {props.service.destination || "Destino no disponible"}
+            </p>
+          </div>
+        </div>
+
+        <Button
+          type="button"
+          disabled={props.isStarting}
+          onClick={() => void props.onStart()}
+          className="w-full bg-[#2A9D8F] hover:bg-[#238b7e] text-white disabled:opacity-70"
+        >
+          {props.isStarting ? "Iniciando..." : "Iniciar servicio"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function InServiceView(props: {
+  service: BackendService;
+  setSelectedService: Dispatch<SetStateAction<BackendService | null>>;
+  closePin: string;
+  setClosePin: Dispatch<SetStateAction<string>>;
+  onCloseService: () => void | Promise<void>;
+  closingServiceId: string | null;
+  onReportIncident: (service: BackendService) => void;
+  validationError: string;
+  onOpenCloseValidationSafe: (service: BackendService) => void | Promise<void>;
+  evidences: ServiceEvidence[];
+  onSelectEvidenceFile: (file: File | null) => void;
+  onUploadEvidence: (service: BackendService) => void | Promise<void>;
+  evidenceFile: File | null;
+  evidencePreviewUrl: string | null;
+  uploadingEvidenceServiceId: string | null;
+}) {
+  const evidenceFileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    props.setSelectedService(props.service);
+  }, [props.service.service_id]);
+
+  const isClosing = props.closingServiceId === props.service.service_id;
+  const isPinValid = props.closePin.trim().length === 4;
+  const isUploading = props.uploadingEvidenceServiceId === props.service.service_id;
+
+  return (
+    <div className="min-h-screen bg-green-50 flex flex-col px-6 py-6">
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6">
+        <h1 className="text-2xl font-bold text-gray-900">Servicio en curso</h1>
+
+        <div className="space-y-5 rounded-xl border border-green-200 bg-white p-5 shadow-sm">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Recoger en</p>
+            <p className="mt-1 text-base font-medium text-gray-900">
+              {props.service.origin || "Origen no disponible"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Entregar en</p>
+            <p className="mt-1 text-base font-medium text-gray-900">
+              {props.service.destination || "Destino no disponible"}
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-green-200/80 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs font-medium uppercase tracking-wide text-gray-400">Evidencia</span>
+            <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+              {props.evidences.length > 0 ? (
+                <button
+                  type="button"
+                  className="flex items-center gap-2 rounded-lg py-0.5 pl-0.5 pr-1 transition hover:bg-gray-50"
+                  onClick={() => void props.onOpenCloseValidationSafe(props.service)}
+                  aria-label={`${props.evidences.length} evidencias registradas, actualizar lista`}
+                >
+                  <img
+                    src={props.evidences[0].file_url}
+                    alt=""
+                    className="h-8 w-8 shrink-0 rounded-md border border-gray-200/90 object-cover opacity-90"
+                  />
+                  <span className="rounded-full bg-[#2A9D8F]/12 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-[#2A9D8F]">
+                    {props.evidences.length}
+                  </span>
+                </button>
+              ) : null}
+              <input
+                ref={evidenceFileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                tabIndex={-1}
+                onChange={(e) => {
+                  props.onSelectEvidenceFile(e.target.files?.[0] || null);
+                  e.target.value = "";
+                }}
+              />
+              <button
+                type="button"
+                disabled={isUploading}
+                className="rounded-full border border-[#2A9D8F]/30 bg-[#2A9D8F]/10 p-2.5 text-[#2A9D8F] shadow-sm transition hover:bg-[#2A9D8F]/18 disabled:opacity-50"
+                aria-label="Tomar o elegir foto"
+                onClick={() => evidenceFileInputRef.current?.click()}
+              >
+                <Camera className="h-5 w-5" aria-hidden />
+              </button>
+            </div>
+          </div>
+          {props.evidencePreviewUrl ? (
+            <img
+              src={props.evidencePreviewUrl}
+              alt="Vista previa"
+              className="mt-3 max-h-24 w-full rounded-lg border border-gray-200/80 object-contain"
+            />
+          ) : null}
+          {props.evidenceFile ? (
+            <Button
+              type="button"
+              disabled={isUploading}
+              onClick={() => void props.onUploadEvidence(props.service)}
+              className="mt-3 w-full bg-[#2A9D8F] hover:bg-[#238b7e] text-white disabled:opacity-70"
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
+                  Subiendo...
+                </>
+              ) : (
+                "Subir evidencia"
+              )}
+            </Button>
+          ) : null}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="in-service-close-pin">PIN de cierre</Label>
+          <Input
+            id="in-service-close-pin"
+            type="password"
+            placeholder="••••"
+            value={props.closePin}
+            onChange={(e) =>
+              props.setClosePin(e.target.value.replace(/\D/g, "").slice(0, 4))
+            }
+            className="font-mono text-lg tracking-wider"
+            maxLength={4}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+          />
+          {!props.validationError ? (
+            <p className="text-xs text-gray-500">Ingresa el PIN de cierre de 4 dígitos</p>
+          ) : null}
+        </div>
+
+        {props.validationError ? (
+          <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
+            <AlertCircle className="h-5 w-5 shrink-0 text-red-500" aria-hidden />
+            <p className="text-sm text-red-700">{props.validationError}</p>
+          </div>
+        ) : null}
+
+        <div className="flex flex-col gap-3">
+          <Button
+            type="button"
+            disabled={isClosing || !isPinValid}
+            onClick={() => void props.onCloseService()}
+            className="w-full bg-[#2A9D8F] hover:bg-[#238b7e] text-white disabled:opacity-70"
+          >
+            {isClosing ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
+                Finalizando...
+              </>
+            ) : (
+              "Finalizar servicio"
+            )}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void props.onReportIncident(props.service)}
+            className="w-full text-gray-600"
+          >
+            Reportar incidente
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function MensajeroPanel() {
@@ -839,6 +1215,11 @@ export default function MensajeroPanel() {
     await loadServiceEvidences(service.service_id, true);
   };
 
+  const loadEvidencesForService = async (service: BackendService) => {
+    setSelectedService(service);
+    await loadServiceEvidences(service.service_id, true);
+  };
+
   const handleCloseService = async () => {
     if (!selectedService) return;
 
@@ -926,7 +1307,68 @@ export default function MensajeroPanel() {
     : [];
 
   const dispatchCurrentService = activeService ?? claimedServices[0] ?? null;
+  const firstOffer = availableServices[0] ?? null;
+
+  let uiState: UiState;
+  if (!isOnline) {
+    uiState = "OFFLINE";
+  } else if (dispatchCurrentService?.status === "STARTED") {
+    uiState = "IN_SERVICE";
+  } else if (dispatchCurrentService?.status === "CLAIMED") {
+    uiState = "ASSIGNED";
+  } else if (firstOffer) {
+    uiState = "OFFER";
+  } else {
+    uiState = "AVAILABLE";
+  }
+
   const showPrimaryOfferHero = isOnline && !dispatchCurrentService;
+
+  if (uiState === "OFFLINE") {
+    return <OfflineView onToggle={() => void handleToggleAvailability()} />;
+  }
+  if (uiState === "AVAILABLE") {
+    return <AvailableView />;
+  }
+  if (uiState === "OFFER" && firstOffer) {
+    return (
+      <OfferView
+        offer={firstOffer}
+        onAccept={() => handleAcceptService(firstOffer.service_id, firstOffer)}
+        isAccepting={claimingServiceId === firstOffer.service_id}
+      />
+    );
+  }
+  if (uiState === "ASSIGNED" && dispatchCurrentService) {
+    return (
+      <AssignedView
+        service={dispatchCurrentService}
+        onStart={() => handleStartService(dispatchCurrentService)}
+        isStarting={startingServiceId === dispatchCurrentService.service_id}
+      />
+    );
+  }
+  if (uiState === "IN_SERVICE" && dispatchCurrentService) {
+    return (
+      <InServiceView
+        service={dispatchCurrentService}
+        setSelectedService={setSelectedService}
+        closePin={closePin}
+        setClosePin={setClosePin}
+        onCloseService={handleCloseService}
+        closingServiceId={closingServiceId}
+        onReportIncident={handleReportIncident}
+        validationError={validationError}
+        onOpenCloseValidationSafe={loadEvidencesForService}
+        evidences={evidencesByService[dispatchCurrentService.service_id] ?? []}
+        onSelectEvidenceFile={handleSelectEvidenceFile}
+        onUploadEvidence={(s) => void uploadEvidenceForService(s)}
+        evidenceFile={evidenceFile}
+        evidencePreviewUrl={evidencePreviewUrl}
+        uploadingEvidenceServiceId={uploadingEvidenceServiceId}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
