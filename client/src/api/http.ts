@@ -1,5 +1,6 @@
 import axios, { type InternalAxiosRequestConfig } from "axios";
-import { getToken } from "@/authStorage";
+import { clearToken, getToken } from "@/authStorage";
+import { RUNTIME_USER_INFO_KEY } from "@/authUser";
 
 export const http = axios.create({
   baseURL: import.meta.env.VITE_RUTAFY_API_BASE,
@@ -26,3 +27,22 @@ http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   }
   return config;
 });
+
+http.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      clearToken();
+      try {
+        localStorage.removeItem(RUNTIME_USER_INFO_KEY);
+      } catch {
+        /* ignore */
+      }
+
+      if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
+    }
+    return Promise.reject(error);
+  }
+);

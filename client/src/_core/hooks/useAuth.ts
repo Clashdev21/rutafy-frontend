@@ -7,7 +7,6 @@ import {
   RUNTIME_USER_INFO_KEY,
   type AuthUser,
 } from "@/authUser";
-import axios from "axios";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type UseAuthOptions = {
@@ -57,9 +56,6 @@ export function useAuth(options?: UseAuthOptions) {
     } catch (e: unknown) {
       setUser(null);
       setError(e);
-      if (axios.isAxiosError(e) && e.response?.status === 401) {
-        console.warn("401 en /me, no se limpia token automáticamente");
-      }
     } finally {
       setLoading(false);
     }
