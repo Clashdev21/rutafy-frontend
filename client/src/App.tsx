@@ -9,7 +9,7 @@ import RoleSelector from "./pages/RoleSelector";
 import Login from "./pages/Login";
 import RegisterTransportista from "./pages/RegisterTransportista";
 import TransportistaPanel from "./pages/TransportistaPanel";
-import MensajeroPanel from "./pages/MensajeroPanel";
+import MensajeroRoute from "./routes/MensajeroRoute";
 import NotFound from "./pages/NotFound";
 
 // Legacy Client/Driver pages (keeping for backwards compatibility)
@@ -37,7 +37,7 @@ function Router() {
       <Route path="/register-transportista" component={RegisterTransportista} />
 
       <Route path="/transportista" component={TransportistaPanel} />
-      <Route path="/mensajero" component={MensajeroPanel} />
+      <Route path="/mensajero" component={MensajeroRoute} />
 
       <Route path="/client" component={ClientHome} />
       <Route path="/client/tracking" component={ClientTracking} />
