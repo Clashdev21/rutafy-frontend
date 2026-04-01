@@ -47,11 +47,8 @@ import {
   KeyRound,
   MapPinned,
   RefreshCw,
-  CalendarClock,
-  ChevronDown,
   ChevronRight,
-  ChevronUp,
-  Sparkles,
+  Home,
   MessageSquarePlus,
   Loader2,
 } from "lucide-react";
@@ -64,6 +61,7 @@ type UiServiceType = "DOCS" | "PACKAGE" | "COMPLIANCE" | "TRANSPORT";
 type LocationMode = "NODE" | "FREE";
 type RequestFlow = "NOW" | "SCHEDULED";
 type ExpandedPanel = "NOW" | "SCHEDULED" | null;
+type TransportistaTab = "home" | "activity" | "account";
 
 type CreatedServiceInfo = {
   id: string;
@@ -399,10 +397,10 @@ export default function TransportistaPanel() {
   const { user, logout, loading } = useAuth();
   const [, setLocation] = useLocation();
 
-  const [expandedPanel, setExpandedPanel] = useState<ExpandedPanel>(null);
+  const [expandedPanel, setExpandedPanel] = useState<ExpandedPanel>("NOW");
+  const [activeTab, setActiveTab] = useState<TransportistaTab>("home");
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
   const [selectedHistoryService, setSelectedHistoryService] = useState<LocalServiceItem | null>(null);
   const [reportBlockOpen, setReportBlockOpen] = useState(false);
   const [reportNote, setReportNote] = useState("");
@@ -731,10 +729,6 @@ export default function TransportistaPanel() {
     }
   };
 
-  const togglePanel = (panel: ExpandedPanel) => {
-    setExpandedPanel((prev) => (prev === panel ? null : panel));
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-3">
@@ -752,6 +746,592 @@ export default function TransportistaPanel() {
       </div>
     );
   }
+
+  const HomeView = () => (
+    <div className="space-y-6">
+        <Card className="border-0 shadow-sm bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] text-white overflow-hidden">
+          <CardContent className="p-4 md:p-6">
+            {activeService ? (
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 md:w-12 md:h-12 bg-white/20 rounded-2xl flex items-center justify-center shadow-inner">
+                      <Motorcycle className="w-5 h-5 md:w-6 md:h-6" />
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-white/80">
+                        Servicio activo
+                      </p>
+                      <p className="text-xs text-white/90 mt-0.5">
+                        {getServiceTypeLabel(activeService.serviceType)}
+                      </p>
+                      <p className="text-sm font-semibold text-white mt-0.5 line-clamp-2">
+                        {activeService.origin}{" "}
+                        <span className="mx-1">→</span>
+                        {activeService.destination}
+                      </p>
+                      <p className="text-xs font-mono text-white/80 mt-1">
+                        Código: {activeService.serviceCode}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`rounded-2xl bg-white/12 px-3 py-2 text-xs md:text-sm backdrop-blur-sm ${
+                      activeService.status === "OFFERED" ? "animate-pulse" : ""
+                    }`}
+                  >
+                    <p className="text-white/80">Estado actual</p>
+                    <p className="font-semibold mt-0.5">
+                      {statusLabels[activeService.status] || activeService.status}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-1">
+                  {(() => {
+                    const stepIndex = getProgressStepIndex(activeService.status);
+                    const percent =
+                      (stepIndex / Math.max(progressSteps.length - 1, 1)) * 100;
+                    return (
+                      <div className="space-y-3">
+                        <div className="relative h-8">
+                          <div className="absolute top-1/2 left-0 right-0 h-1 -translate-y-1/2 rounded-full bg-white/20" />
+                          <div
+                            className="absolute -top-1 transition-all duration-500 ease-out"
+                            style={{
+                              left: `${percent}%`,
+                              transform: "translateX(-50%)",
+                            }}
+                          >
+                            <div className="h-8 w-8 rounded-full bg-white flex items-center justify-center shadow-md">
+                              <Motorcycle className="h-4 w-4 text-[#2A9D8F]" />
+                            </div>
+                          </div>
+                          <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-between px-1">
+                            {progressSteps.map((step, index) => {
+                              const isPast = index <= stepIndex;
+                              return (
+                                <div
+                                  key={step.key}
+                                  className="flex flex-col items-center w-full"
+                                >
+                                  <div
+                                    className={`h-2 w-2 rounded-full border border-white ${
+                                      isPast ? "bg-white" : "bg-transparent"
+                                    }`}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between text-xs text-white/80">
+                          {progressSteps.map((step, index) => {
+                            const isPast = index <= stepIndex;
+                            return (
+                              <span
+                                key={step.key}
+                                className={`w-full text-center ${
+                                  isPast ? "font-semibold text-white" : ""
+                                }`}
+                              >
+                                {step.label}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <ServiceOperationalPreview service={activeService} variant="onColor" />
+              </div>
+            ) : (
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 md:w-12 md:h-12 bg-white/20 rounded-2xl flex items-center justify-center shadow-inner">
+                    <Truck className="w-5 h-5 md:w-6 md:h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-base md:text-lg font-semibold">
+                      Sin servicio activo
+                    </h2>
+                    <p className="text-white/85 mt-1 text-sm">
+                      Solicita un servicio o programa una recogida para empezar a operar.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl bg-white/12 px-4 py-3 text-sm backdrop-blur-sm">
+                  <p className="text-white/80">Estado general</p>
+                  <p className="font-semibold mt-1">
+                    Sin servicio activo
+                  </p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="space-y-4">
+          <Card className="border-0 shadow-sm overflow-hidden">
+            <CardHeader className="space-y-4 p-5 pb-0 md:p-6 md:pb-0">
+              <CardTitle className="text-lg font-semibold text-slate-900">
+                Nuevo servicio
+              </CardTitle>
+              <div
+                className="flex rounded-xl bg-slate-100/90 p-1 gap-1 transition-colors duration-150"
+                role="tablist"
+                aria-label="Modo de servicio"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={expandedPanel === "NOW"}
+                  onClick={() => setExpandedPanel("NOW")}
+                  className={[
+                    "flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors duration-150",
+                    expandedPanel === "NOW"
+                      ? "bg-[#2A9D8F] text-white shadow-sm"
+                      : "bg-transparent text-slate-500 hover:bg-slate-200/60",
+                  ].join(" ")}
+                >
+                  Ahora
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={expandedPanel === "SCHEDULED"}
+                  onClick={() => setExpandedPanel("SCHEDULED")}
+                  className={[
+                    "flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors duration-150",
+                    expandedPanel === "SCHEDULED"
+                      ? "bg-[#2A9D8F] text-white shadow-sm"
+                      : "bg-transparent text-slate-500 hover:bg-slate-200/60",
+                  ].join(" ")}
+                >
+                  Programado
+                </button>
+              </div>
+            </CardHeader>
+
+            {expandedPanel === "NOW" && (
+              <CardContent className="space-y-5 p-5 md:p-6 pt-4 transition-opacity duration-150">
+                {renderSharedForm({
+                  serviceMode,
+                  setServiceMode,
+                  serviceType,
+                  setServiceType,
+                  companyId,
+                  setCompanyId,
+                  companies,
+                  originMode,
+                  setOriginMode,
+                  destinationMode,
+                  setDestinationMode,
+                  originNodeId,
+                  setOriginNodeId,
+                  destinationNodeId,
+                  setDestinationNodeId,
+                  origin,
+                  setOrigin,
+                  destination,
+                  setDestination,
+                  originNodeSearch,
+                  setOriginNodeSearch,
+                  destinationNodeSearch,
+                  setDestinationNodeSearch,
+                  activeNodes,
+                  originSelectedNode,
+                  destinationSelectedNode,
+                  isLoadingNodes,
+                })}
+
+                <div className="flex justify-end gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => setExpandedPanel(null)}
+                    className="rounded-xl"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={() => handleCreateService("NOW")}
+                    disabled={isCreatingNow}
+                    className="rounded-xl bg-[#2A9D8F] hover:bg-[#238b7e] active:scale-[0.98] transition-all duration-150 shadow-sm"
+                  >
+                    {isCreatingNow ? "Creando..." : "Crear servicio ahora"}
+                  </Button>
+                </div>
+              </CardContent>
+            )}
+
+            {expandedPanel === "SCHEDULED" && (
+              <CardContent className="space-y-5 p-5 md:p-6 pt-4 transition-opacity duration-150">
+                <div className="space-y-2">
+                  <Label>Fecha y hora programada</Label>
+                  <Input
+                    type="datetime-local"
+                    value={scheduledAt}
+                    min={toInputDateTimeLocal(new Date().toISOString())}
+                    onChange={(e) => setScheduledAt(e.target.value)}
+                    className="rounded-xl"
+                  />
+                </div>
+
+                {renderSharedForm({
+                  serviceMode,
+                  setServiceMode,
+                  serviceType,
+                  setServiceType,
+                  companyId,
+                  setCompanyId,
+                  companies,
+                  originMode,
+                  setOriginMode,
+                  destinationMode,
+                  setDestinationMode,
+                  originNodeId,
+                  setOriginNodeId,
+                  destinationNodeId,
+                  setDestinationNodeId,
+                  origin,
+                  setOrigin,
+                  destination,
+                  setDestination,
+                  originNodeSearch,
+                  setOriginNodeSearch,
+                  destinationNodeSearch,
+                  setDestinationNodeSearch,
+                  activeNodes,
+                  originSelectedNode,
+                  destinationSelectedNode,
+                  isLoadingNodes,
+                })}
+
+                <div className="flex justify-end gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => setExpandedPanel(null)}
+                    className="rounded-xl"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={() => handleCreateService("SCHEDULED")}
+                    disabled={isCreatingScheduled}
+                    className="rounded-xl bg-[#2A9D8F] hover:bg-[#238b7e] active:scale-[0.98] transition-all duration-150 shadow-sm"
+                  >
+                    {isCreatingScheduled ? "Programando..." : "Programar servicio"}
+                  </Button>
+                </div>
+              </CardContent>
+            )}
+
+            {expandedPanel === null && (
+              <CardContent className="p-5 md:p-6 pt-2 pb-6 text-center text-sm text-slate-500 transition-opacity duration-150">
+                Elige un modo arriba para continuar.
+              </CardContent>
+            )}
+          </Card>
+        </div>
+      </div>
+  );
+
+  const ActivityView = () => (
+    <div className="space-y-6">
+        <Card className="border border-slate-200/80 bg-white shadow-sm overflow-hidden rounded-2xl">
+          <div className="flex flex-col gap-3 px-4 py-3 border-b border-slate-100 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-slate-900">Actividad reciente</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {recentServices.length === 0
+                  ? "Aquí verás tus últimos envíos."
+                  : `Últimos ${recentServices.length} servicios`}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  void loadTransportistaHistory();
+                }}
+                disabled={isLoadingHistory}
+                className="h-9 rounded-lg text-slate-600"
+              >
+                <RefreshCw className={`w-4 h-4 mr-1.5 ${isLoadingHistory ? "animate-spin" : ""}`} />
+                {isLoadingHistory ? "Actualizando..." : "Recargar"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setIsHistoryOpen(true)}
+                className="h-9 rounded-lg border-slate-200 text-slate-700"
+              >
+                Ver historial completo
+              </Button>
+            </div>
+          </div>
+
+          <div className="px-3 py-2">
+            {recentServices.length === 0 ? (
+              <div className="text-center py-8 text-sm text-slate-400">
+                No tienes servicios registrados todavía.
+              </div>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {recentServices.map((service) => (
+                  <li key={service.id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedHistoryService(service)}
+                      className="w-full text-left group flex items-start gap-2.5 py-3 px-2 rounded-lg transition-colors hover:bg-slate-50/90 active:bg-slate-100/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2A9D8F]/40 focus-visible:ring-offset-1"
+                    >
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        <p className="text-sm text-slate-800 leading-snug line-clamp-2">
+                          <span className="font-medium text-slate-900">{service.origin}</span>
+                          <span className="text-slate-400 mx-1">→</span>
+                          <span className="font-medium text-slate-900">{service.destination}</span>
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 text-[11px] rounded-full font-medium ${
+                              statusColors[service.status] || "bg-gray-100 text-gray-700"
+                            }`}
+                          >
+                            {statusLabels[service.status] || service.status}
+                          </span>
+                          <span className="text-[11px] text-slate-500">
+                            {formatDateTime(service.createdAt)}
+                          </span>
+                          <span className="text-[11px] text-slate-400">
+                            {getServiceTypeLabel(service.serviceType)} ·{" "}
+                            {getRequestModeLabel(service.requestMode)}
+                          </span>
+                        </div>
+                        {service.requestMode === "SCHEDULED" && service.scheduledFor && (
+                          <p className="text-[11px] text-slate-500">
+                            Programado: {formatDateTime(service.scheduledFor)}
+                          </p>
+                        )}
+                        <p className="text-[11px] font-mono text-slate-400 truncate">
+                          {service.serviceCode}
+                        </p>
+                      </div>
+                      <ChevronRight
+                        className="w-4 h-4 text-slate-300 group-hover:text-slate-400 shrink-0 mt-0.5"
+                        aria-hidden
+                      />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Card>
+
+        <Card className="border border-slate-200/70 bg-slate-50/40 shadow-none">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm font-medium text-slate-600 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-slate-400 shrink-0" strokeWidth={1.75} />
+              Resumen corto
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-0 px-4 pb-4 pt-0 text-sm">
+            <div className="flex justify-between gap-3 py-2 border-b border-slate-100/90">
+              <span className="text-slate-500">Total</span>
+              <span className="text-slate-700 font-medium tabular-nums">{stats.total}</span>
+            </div>
+            <div className="flex justify-between gap-3 py-2 border-b border-slate-100/90">
+              <span className="text-slate-500">Solicitados</span>
+              <span className="text-slate-700 font-medium tabular-nums">{stats.requested}</span>
+            </div>
+            <div className="flex justify-between gap-3 py-2 border-b border-slate-100/90">
+              <span className="text-slate-500">Tomados</span>
+              <span className="text-slate-700 font-medium tabular-nums">{stats.claimed}</span>
+            </div>
+            <div className="flex justify-between gap-3 py-2 border-b border-slate-100/90">
+              <span className="text-slate-500">En curso</span>
+              <span className="text-slate-700 font-medium tabular-nums">{stats.started}</span>
+            </div>
+            <div className="flex justify-between gap-3 py-2">
+              <span className="text-slate-500">Cerrados</span>
+              <span className="text-slate-700 font-medium tabular-nums">{stats.closed}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <ClipboardList className="w-5 h-5" />
+              Servicio activo
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!activeService ? (
+              <div className="rounded-2xl border border-dashed bg-slate-50 p-4 text-sm text-slate-500">
+                No tienes ningún servicio en curso en este momento.
+              </div>
+            ) : (
+              <div className="rounded-2xl border bg-white p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span
+                    className={`px-2 py-0.5 text-xs rounded-full ${
+                      statusColors[activeService.status] || "bg-gray-100 text-gray-700"
+                    }`}
+                  >
+                    {statusLabels[activeService.status] || activeService.status}
+                  </span>
+
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-700">
+                    {getRequestModeLabel(activeService.requestMode)}
+                  </span>
+                </div>
+
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Ruta</p>
+                  <p className="text-sm text-gray-800">
+                    <strong>{activeService.origin}</strong>
+                    <span className="mx-2">→</span>
+                    <strong>{activeService.destination}</strong>
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Código</p>
+                  <p className="font-mono text-sm font-semibold text-[#2A9D8F] break-all">
+                    {activeService.serviceCode}
+                  </p>
+                </div>
+
+                <ServiceOperationalPreview service={activeService} variant="onCard" />
+
+                {activeService.closePin &&
+                  activeService.closePin !== "N/D" &&
+                  activeService.closePin !== "----" &&
+                  (activeService.status === "STARTED" ? (
+                    <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-3 space-y-2">
+                      <p className="text-xs font-semibold text-amber-800">
+                        PIN listo para cierre
+                      </p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-mono text-lg font-bold text-amber-900">
+                          {activeService.closePin}
+                        </p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            copyToClipboard(activeService.closePin, "close")
+                          }
+                          className="shrink-0"
+                        >
+                          {copiedClosePin ? (
+                            <Check className="w-4 h-4 text-green-600" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-amber-700">
+                        Úsalo al finalizar el servicio
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">
+                          PIN de cierre
+                        </p>
+                        <p className="font-mono text-sm font-semibold text-gray-800">
+                          {activeService.closePin}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          copyToClipboard(activeService.closePin, "close")
+                        }
+                        className="shrink-0"
+                      >
+                        {copiedClosePin ? (
+                          <Check className="w-4 h-4 text-green-600" />
+                        ) : (
+                          <Copy className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </div>
+                  ))}
+
+                {activeService.requestMode === "SCHEDULED" && activeService.scheduledFor && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Programado</p>
+                    <p className="text-sm text-gray-800">
+                      {formatDateTime(activeService.scheduledFor)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+  );
+
+  const AccountView = () => (
+    <div className="space-y-6">
+        <Card className="border-0 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <User className="w-5 h-5" />
+              Mi Perfil
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-gray-500">Nombre</span>
+                <span className="font-medium">{user?.name || "-"}</span>
+              </div>
+
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-gray-500">Email</span>
+                <span className="font-medium">{user?.email || "-"}</span>
+              </div>
+
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-gray-500">Rol</span>
+                <span className="px-2 py-1 bg-[#2A9D8F]/10 text-[#2A9D8F] rounded-full text-sm font-medium">
+                  Transportista
+                </span>
+              </div>
+
+              <div className="flex justify-between py-2">
+                <span className="text-gray-500">Estado</span>
+                <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                  Activo
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Button
+          variant="outline"
+          className="w-full rounded-xl border-slate-200 h-12 text-slate-700"
+          onClick={handleLogout}
+        >
+          <LogOut className="w-4 h-4 mr-2" />
+          Cerrar sesión
+        </Button>
+      </div>
+  );
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)]">
@@ -787,738 +1367,73 @@ export default function TransportistaPanel() {
             </div>
           </div>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleLogout}
-            className="text-white hover:bg-white/10 active:scale-95 transition-all duration-150"
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto p-4 md:p-6 pb-28">
+        {activeTab === "home" && <HomeView />}
+        {activeTab === "activity" && <ActivityView />}
+        {activeTab === "account" && <AccountView />}
+      </div>
+
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/80 bg-white/95 backdrop-blur-md shadow-[0_-4px_24px_rgba(15,23,42,0.07)] pb-[env(safe-area-inset-bottom,0)]"
+        aria-label="Navegación principal"
+      >
+        <div className="max-w-6xl mx-auto flex items-stretch justify-around gap-0.5 px-1.5 pt-1 pb-1.5 sm:px-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("home")}
+            aria-current={activeTab === "home" ? "page" : undefined}
+            className={[
+              "relative flex flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1.5 py-2.5 text-[11px] leading-tight transition-colors duration-150 min-h-[3.5rem] border-t-[3px]",
+              activeTab === "home"
+                ? "border-t-[#2A9D8F] text-[#2A9D8F] bg-[#2A9D8F]/[0.11] font-semibold"
+                : "border-t-transparent text-slate-400 hover:bg-slate-50 hover:text-slate-500 active:bg-slate-100/80 font-medium",
+            ].join(" ")}
           >
-            <LogOut className="w-4 h-4 mr-2" />
-            Salir
-          </Button>
+            <Home
+              className="w-[22px] h-[22px] shrink-0"
+              strokeWidth={activeTab === "home" ? 2.35 : 1.65}
+            />
+            <span>Inicio</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("activity")}
+            aria-current={activeTab === "activity" ? "page" : undefined}
+            className={[
+              "relative flex flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1.5 py-2.5 text-[11px] leading-tight transition-colors duration-150 min-h-[3.5rem] border-t-[3px]",
+              activeTab === "activity"
+                ? "border-t-[#2A9D8F] text-[#2A9D8F] bg-[#2A9D8F]/[0.11] font-semibold"
+                : "border-t-transparent text-slate-400 hover:bg-slate-50 hover:text-slate-500 active:bg-slate-100/80 font-medium",
+            ].join(" ")}
+          >
+            <History
+              className="w-[22px] h-[22px] shrink-0"
+              strokeWidth={activeTab === "activity" ? 2.35 : 1.65}
+            />
+            <span>Actividad</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("account")}
+            aria-current={activeTab === "account" ? "page" : undefined}
+            className={[
+              "relative flex flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1.5 py-2.5 text-[11px] leading-tight transition-colors duration-150 min-h-[3.5rem] border-t-[3px]",
+              activeTab === "account"
+                ? "border-t-[#2A9D8F] text-[#2A9D8F] bg-[#2A9D8F]/[0.11] font-semibold"
+                : "border-t-transparent text-slate-400 hover:bg-slate-50 hover:text-slate-500 active:bg-slate-100/80 font-medium",
+            ].join(" ")}
+          >
+            <User
+              className="w-[22px] h-[22px] shrink-0"
+              strokeWidth={activeTab === "account" ? 2.35 : 1.65}
+            />
+            <span>Cuenta</span>
+          </button>
         </div>
-      </div>
-
-      <div className="max-w-6xl mx-auto p-4 md:p-6">
-        <div className="grid grid-cols-1 xl:grid-cols-[1.7fr_0.9fr] gap-6">
-          <div className="space-y-6">
-            <Card className="border-0 shadow-sm bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] text-white overflow-hidden">
-              <CardContent className="p-4 md:p-6">
-                {activeService ? (
-                  <div className="space-y-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 md:w-12 md:h-12 bg-white/20 rounded-2xl flex items-center justify-center shadow-inner">
-                          <Motorcycle className="w-5 h-5 md:w-6 md:h-6" />
-                        </div>
-                        <div>
-                          <p className="text-[11px] uppercase tracking-[0.16em] text-white/80">
-                            Servicio activo
-                          </p>
-                          <p className="text-xs text-white/90 mt-0.5">
-                            {getServiceTypeLabel(activeService.serviceType)}
-                          </p>
-                          <p className="text-sm font-semibold text-white mt-0.5 line-clamp-2">
-                            {activeService.origin}{" "}
-                            <span className="mx-1">→</span>
-                            {activeService.destination}
-                          </p>
-                          <p className="text-xs font-mono text-white/80 mt-1">
-                            Código: {activeService.serviceCode}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div
-                        className={`rounded-2xl bg-white/12 px-3 py-2 text-xs md:text-sm backdrop-blur-sm ${
-                          activeService.status === "OFFERED" ? "animate-pulse" : ""
-                        }`}
-                      >
-                        <p className="text-white/80">Estado actual</p>
-                        <p className="font-semibold mt-0.5">
-                          {statusLabels[activeService.status] || activeService.status}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-1">
-                      {(() => {
-                        const stepIndex = getProgressStepIndex(activeService.status);
-                        const percent =
-                          (stepIndex / Math.max(progressSteps.length - 1, 1)) * 100;
-                        return (
-                          <div className="space-y-3">
-                            <div className="relative h-8">
-                              <div className="absolute top-1/2 left-0 right-0 h-1 -translate-y-1/2 rounded-full bg-white/20" />
-                              <div
-                                className="absolute -top-1 transition-all duration-500 ease-out"
-                                style={{
-                                  left: `${percent}%`,
-                                  transform: "translateX(-50%)",
-                                }}
-                              >
-                                <div className="h-8 w-8 rounded-full bg-white flex items-center justify-center shadow-md">
-                                  <Motorcycle className="h-4 w-4 text-[#2A9D8F]" />
-                                </div>
-                              </div>
-                              <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-between px-1">
-                                {progressSteps.map((step, index) => {
-                                  const isPast = index <= stepIndex;
-                                  return (
-                                    <div
-                                      key={step.key}
-                                      className="flex flex-col items-center w-full"
-                                    >
-                                      <div
-                                        className={`h-2 w-2 rounded-full border border-white ${
-                                          isPast ? "bg-white" : "bg-transparent"
-                                        }`}
-                                      />
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-
-                            <div className="flex justify-between text-xs text-white/80">
-                              {progressSteps.map((step, index) => {
-                                const isPast = index <= stepIndex;
-                                return (
-                                  <span
-                                    key={step.key}
-                                    className={`w-full text-center ${
-                                      isPast ? "font-semibold text-white" : ""
-                                    }`}
-                                  >
-                                    {step.label}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-
-                    <ServiceOperationalPreview service={activeService} variant="onColor" />
-                  </div>
-                ) : (
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 md:w-12 md:h-12 bg-white/20 rounded-2xl flex items-center justify-center shadow-inner">
-                        <Truck className="w-5 h-5 md:w-6 md:h-6" />
-                      </div>
-                      <div>
-                        <h2 className="text-base md:text-lg font-semibold">
-                          Sin servicio activo
-                        </h2>
-                        <p className="text-white/85 mt-1 text-sm">
-                          Solicita un servicio o programa una recogida para empezar a operar.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl bg-white/12 px-4 py-3 text-sm backdrop-blur-sm">
-                      <p className="text-white/80">Estado general</p>
-                      <p className="font-semibold mt-1">
-                        Sin servicio activo
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <div className="space-y-4">
-              <Card className="border-0 shadow-sm overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => togglePanel("NOW")}
-                  className="w-full text-left group"
-                >
-                  <CardContent
-                    className={[
-                      "p-5 md:p-6 transition-all duration-150 border rounded-2xl",
-                      expandedPanel === "NOW"
-                        ? "border-[#2A9D8F] bg-[#2A9D8F]/5 shadow-sm"
-                        : "border-slate-200 bg-white hover:bg-slate-50 active:scale-[0.995]",
-                    ].join(" ")}
-                  >
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-4">
-                        <div
-                          className={[
-                            "w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm transition-transform duration-200 group-hover:scale-105",
-                            expandedPanel === "NOW"
-                              ? "bg-[#2A9D8F]"
-                              : "bg-[#2A9D8F]/10",
-                          ].join(" ")}
-                        >
-                          <Sparkles
-                            className={[
-                              "w-7 h-7",
-                              expandedPanel === "NOW"
-                                ? "text-white"
-                                : "text-[#2A9D8F]",
-                            ].join(" ")}
-                          />
-                        </div>
-                        <div>
-                          <p className="text-lg md:text-xl font-bold tracking-[0.1em] text-[#2A9D8F] uppercase animate-[pulse_2.5s_ease-in-out_infinite]">
-                            Solicitar ahora
-                          </p>
-                          <h3 className="text-lg md:text-xl font-semibold text-slate-800 mt-1">
-                            Mensajero asignado lo antes posible
-                          </h3>
-                          <p className="text-sm text-slate-500 mt-0.5">
-                            Usa este modo para servicios inmediatos de operación.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="shrink-0 rounded-full bg-slate-100 p-2">
-                        {expandedPanel === "NOW" ? (
-                          <ChevronUp className="w-5 h-5 text-slate-700" />
-                        ) : (
-                          <ChevronDown className="w-5 h-5 text-slate-700" />
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </button>
-
-                {expandedPanel === "NOW" && (
-                  <div className="border-t bg-white">
-                    <CardContent className="p-5 md:p-6 space-y-5 animate-in fade-in duration-200">
-                      {renderSharedForm({
-                        serviceMode,
-                        setServiceMode,
-                        serviceType,
-                        setServiceType,
-                        companyId,
-                        setCompanyId,
-                        companies,
-                        originMode,
-                        setOriginMode,
-                        destinationMode,
-                        setDestinationMode,
-                        originNodeId,
-                        setOriginNodeId,
-                        destinationNodeId,
-                        setDestinationNodeId,
-                        origin,
-                        setOrigin,
-                        destination,
-                        setDestination,
-                        originNodeSearch,
-                        setOriginNodeSearch,
-                        destinationNodeSearch,
-                        setDestinationNodeSearch,
-                        activeNodes,
-                        originSelectedNode,
-                        destinationSelectedNode,
-                        isLoadingNodes,
-                      })}
-
-                      <div className="flex justify-end gap-3">
-                        <Button
-                          variant="outline"
-                          onClick={() => setExpandedPanel(null)}
-                          className="rounded-xl"
-                        >
-                          Cancelar
-                        </Button>
-                        <Button
-                          onClick={() => handleCreateService("NOW")}
-                          disabled={isCreatingNow}
-                          className="rounded-xl bg-[#2A9D8F] hover:bg-[#238b7e] active:scale-[0.98] transition-all duration-150 shadow-sm"
-                        >
-                          {isCreatingNow ? "Creando..." : "Crear servicio ahora"}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </div>
-                )}
-              </Card>
-
-              <Card className="border-0 shadow-sm overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => togglePanel("SCHEDULED")}
-                  className="w-full text-left group"
-                >
-                  <CardContent
-                    className={[
-                      "p-5 md:p-6 transition-all duration-150 border rounded-2xl",
-                      expandedPanel === "SCHEDULED"
-                        ? "border-blue-600 bg-blue-50 shadow-sm"
-                        : "border-slate-200 bg-white hover:bg-slate-50 active:scale-[0.995]",
-                    ].join(" ")}
-                  >
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-4">
-                        <div
-                          className={[
-                            "w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm transition-transform duration-200 group-hover:scale-105",
-                            expandedPanel === "SCHEDULED"
-                              ? "bg-blue-600"
-                              : "bg-blue-100",
-                          ].join(" ")}
-                        >
-                          <CalendarClock
-                            className={[
-                              "w-7 h-7",
-                              expandedPanel === "SCHEDULED"
-                                ? "text-white"
-                                : "text-blue-700",
-                            ].join(" ")}
-                          />
-                        </div>
-                        <div>
-                          <p className="text-base md:text-lg font-bold tracking-[0.12em] text-blue-700 uppercase">
-                            Programar recogida
-                          </p>
-                          <h3 className="text-lg md:text-xl font-semibold text-slate-800 mt-1">
-                            Agenda el servicio para más tarde
-                          </h3>
-                          <p className="text-sm text-slate-500 mt-0.5">
-                            Programa una recogida futura sin mezclarla con el flujo inmediato.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="shrink-0 rounded-full bg-slate-100 p-2">
-                        {expandedPanel === "SCHEDULED" ? (
-                          <ChevronUp className="w-5 h-5 text-slate-700" />
-                        ) : (
-                          <ChevronDown className="w-5 h-5 text-slate-700" />
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </button>
-
-                {expandedPanel === "SCHEDULED" && (
-                  <div className="border-t bg-white">
-                    <CardContent className="p-5 md:p-6 space-y-5 animate-in fade-in duration-200">
-                      <div className="space-y-2">
-                        <Label>Fecha y hora programada</Label>
-                        <Input
-                          type="datetime-local"
-                          value={scheduledAt}
-                          min={toInputDateTimeLocal(new Date().toISOString())}
-                          onChange={(e) => setScheduledAt(e.target.value)}
-                          className="rounded-xl"
-                        />
-                      </div>
-
-                      {renderSharedForm({
-                        serviceMode,
-                        setServiceMode,
-                        serviceType,
-                        setServiceType,
-                        companyId,
-                        setCompanyId,
-                        companies,
-                        originMode,
-                        setOriginMode,
-                        destinationMode,
-                        setDestinationMode,
-                        originNodeId,
-                        setOriginNodeId,
-                        destinationNodeId,
-                        setDestinationNodeId,
-                        origin,
-                        setOrigin,
-                        destination,
-                        setDestination,
-                        originNodeSearch,
-                        setOriginNodeSearch,
-                        destinationNodeSearch,
-                        setDestinationNodeSearch,
-                        activeNodes,
-                        originSelectedNode,
-                        destinationSelectedNode,
-                        isLoadingNodes,
-                      })}
-
-                      <div className="flex justify-end gap-3">
-                        <Button
-                          variant="outline"
-                          onClick={() => setExpandedPanel(null)}
-                          className="rounded-xl"
-                        >
-                          Cancelar
-                        </Button>
-                        <Button
-                          onClick={() => handleCreateService("SCHEDULED")}
-                          disabled={isCreatingScheduled}
-                          className="rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] transition-all duration-150 shadow-sm"
-                        >
-                          {isCreatingScheduled ? "Programando..." : "Programar recogida"}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </div>
-                )}
-              </Card>
-            </div>
-
-            <Card className="border-0 shadow-sm overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setIsHistoryExpanded((prev) => !prev)}
-                className="w-full text-left"
-              >
-                <CardContent
-                  className={[
-                    "p-5 md:p-6 transition-all duration-150 border rounded-2xl",
-                    isHistoryExpanded
-                      ? "border-slate-300 bg-slate-50/50 shadow-sm"
-                      : "border-slate-200 bg-white hover:bg-slate-50 active:scale-[0.995]",
-                  ].join(" ")}
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                      <div
-                        className={[
-                          "w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm",
-                          isHistoryExpanded ? "bg-slate-600" : "bg-slate-100",
-                        ].join(" ")}
-                      >
-                        <History
-                          className={["w-7 h-7", isHistoryExpanded ? "text-white" : "text-slate-700"].join(" ")}
-                        />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-                          Historial
-                        </p>
-                        <h3 className="text-xl md:text-2xl font-bold text-slate-900 mt-1">
-                          Últimos 5 servicios
-                        </h3>
-                        <p className="text-sm text-slate-500 mt-1">
-                          {recentServices.length === 0
-                            ? "Tus servicios recientes aparecerán aquí."
-                            : `${recentServices.length} servicio${recentServices.length !== 1 ? "s" : ""} reciente${recentServices.length !== 1 ? "s" : ""}. Toca para ver.`}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="shrink-0 rounded-full bg-slate-100 p-2">
-                      {isHistoryExpanded ? (
-                        <ChevronUp className="w-5 h-5 text-slate-700" />
-                      ) : (
-                        <ChevronDown className="w-5 h-5 text-slate-700" />
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </button>
-
-              {isHistoryExpanded && (
-                <div className="border-t bg-white">
-                  <CardContent className="p-5 md:p-6 space-y-4 animate-in fade-in duration-200">
-                    <div className="flex flex-wrap gap-2 justify-end">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          loadTransportistaHistory();
-                        }}
-                        disabled={isLoadingHistory}
-                        className="rounded-xl"
-                      >
-                        <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingHistory ? "animate-spin" : ""}`} />
-                        {isLoadingHistory ? "Actualizando..." : "Recargar"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsHistoryOpen(true);
-                        }}
-                        className="rounded-xl"
-                      >
-                        Ver historial completo
-                      </Button>
-                    </div>
-                    {recentServices.length === 0 ? (
-                      <div className="text-center py-8 text-gray-400">
-                        No tienes servicios registrados todavía.
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {recentServices.map((service) => (
-                      <button
-                        type="button"
-                        key={service.id}
-                        onClick={() => setSelectedHistoryService(service)}
-                        className={`w-full text-left rounded-2xl border border-l-4 bg-white p-4 transition-all duration-150 hover:shadow-md active:scale-[0.99] cursor-pointer flex gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2A9D8F]/50 focus-visible:ring-offset-2 ${
-                          statusBorderColors[service.status] || "border-l-slate-300"
-                        }`}
-                      >
-                        <div className="flex-1 min-w-0 space-y-3">
-                          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="font-mono text-base font-bold text-[#2A9D8F] break-all">
-                                {service.serviceCode}
-                              </p>
-                              <p className="text-xs text-gray-500 mt-0.5">
-                                {formatDateTime(service.createdAt)}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2 flex-wrap shrink-0">
-                              <span
-                                className={`px-2 py-0.5 text-xs rounded-full ${
-                                  statusColors[service.status] || "bg-gray-100 text-gray-700"
-                                }`}
-                              >
-                                {statusLabels[service.status] || service.status}
-                              </span>
-                              <span className="px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-600">
-                                {getRequestModeLabel(service.requestMode)}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                              <span aria-hidden>📄</span>
-                              <span>{getServiceTypeLabel(service.serviceType)}</span>
-                            </span>
-                          </div>
-
-                          <p className="text-sm text-gray-700">
-                            <span className="font-medium text-gray-900">{service.origin}</span>
-                            <span className="mx-1.5 text-gray-400">→</span>
-                            <span className="font-medium text-gray-900">{service.destination}</span>
-                          </p>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-gray-100">
-                            <div className="rounded-lg bg-[#2A9D8F]/5 border border-[#2A9D8F]/20 px-3 py-2">
-                              <p className="text-[11px] text-gray-500 uppercase tracking-wide">Código</p>
-                              <p className="font-mono text-sm font-semibold text-[#2A9D8F] break-all">
-                                {service.serviceCode}
-                              </p>
-                            </div>
-                            <div className="rounded-lg bg-amber-50/80 border border-amber-200/60 px-3 py-2">
-                              <p className="text-[11px] text-amber-700 uppercase tracking-wide flex items-center gap-1">
-                                <KeyRound className="w-3 h-3" /> PIN cierre
-                              </p>
-                              <p className="font-mono text-sm font-semibold text-amber-900">
-                                {service.closePin}
-                              </p>
-                            </div>
-                          </div>
-
-                          {service.requestMode === "SCHEDULED" && service.scheduledFor && (
-                            <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-800">
-                              Programado: <strong>{formatDateTime(service.scheduledFor)}</strong>
-                            </div>
-                          )}
-                        </div>
-                        <div className="shrink-0 flex items-center pt-1">
-                          <ChevronRight className="w-5 h-5 text-slate-400" aria-hidden />
-                        </div>
-                      </button>
-                    ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </div>
-              )}
-            </Card>
-          </div>
-
-          <div className="space-y-6">
-            <Card className="border-0 shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <ShieldCheck className="w-5 h-5" />
-                  Resumen corto
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-500">Total</span>
-                  <span className="font-semibold">{stats.total}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-500">Solicitados</span>
-                  <span className="font-semibold">{stats.requested}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-500">Tomados</span>
-                  <span className="font-semibold">{stats.claimed}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-500">En curso</span>
-                  <span className="font-semibold">{stats.started}</span>
-                </div>
-                <div className="flex justify-between py-2">
-                  <span className="text-gray-500">Cerrados</span>
-                  <span className="font-semibold">{stats.closed}</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-0 shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <ClipboardList className="w-5 h-5" />
-                  Servicio activo
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {!activeService ? (
-                  <div className="rounded-2xl border border-dashed bg-slate-50 p-4 text-sm text-slate-500">
-                    No tienes ningún servicio en curso en este momento.
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border bg-white p-4 space-y-3">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <span
-                        className={`px-2 py-0.5 text-xs rounded-full ${
-                          statusColors[activeService.status] || "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {statusLabels[activeService.status] || activeService.status}
-                      </span>
-
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-700">
-                        {getRequestModeLabel(activeService.requestMode)}
-                      </span>
-                    </div>
-
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">Ruta</p>
-                      <p className="text-sm text-gray-800">
-                        <strong>{activeService.origin}</strong>
-                        <span className="mx-2">→</span>
-                        <strong>{activeService.destination}</strong>
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">Código</p>
-                      <p className="font-mono text-sm font-semibold text-[#2A9D8F] break-all">
-                        {activeService.serviceCode}
-                      </p>
-                    </div>
-
-                    <ServiceOperationalPreview service={activeService} variant="onCard" />
-
-                    {activeService.closePin &&
-                      activeService.closePin !== "N/D" &&
-                      activeService.closePin !== "----" &&
-                      (activeService.status === "STARTED" ? (
-                        <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-3 space-y-2">
-                          <p className="text-xs font-semibold text-amber-800">
-                            PIN listo para cierre
-                          </p>
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="font-mono text-lg font-bold text-amber-900">
-                              {activeService.closePin}
-                            </p>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                copyToClipboard(activeService.closePin, "close")
-                              }
-                              className="shrink-0"
-                            >
-                              {copiedClosePin ? (
-                                <Check className="w-4 h-4 text-green-600" />
-                              ) : (
-                                <Copy className="w-4 h-4" />
-                              )}
-                            </Button>
-                          </div>
-                          <p className="text-xs text-amber-700">
-                            Úsalo al finalizar el servicio
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <p className="text-xs text-gray-500 mb-1">
-                              PIN de cierre
-                            </p>
-                            <p className="font-mono text-sm font-semibold text-gray-800">
-                              {activeService.closePin}
-                            </p>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              copyToClipboard(activeService.closePin, "close")
-                            }
-                            className="shrink-0"
-                          >
-                            {copiedClosePin ? (
-                              <Check className="w-4 h-4 text-green-600" />
-                            ) : (
-                              <Copy className="w-4 h-4" />
-                            )}
-                          </Button>
-                        </div>
-                      ))}
-
-                    {activeService.requestMode === "SCHEDULED" && activeService.scheduledFor && (
-                      <div>
-                        <p className="text-xs text-gray-500 mb-1">Programado</p>
-                        <p className="text-sm text-gray-800">
-                          {formatDateTime(activeService.scheduledFor)}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="border-0 shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <User className="w-5 h-5" />
-                  Mi Perfil
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="flex justify-between py-2 border-b">
-                    <span className="text-gray-500">Nombre</span>
-                    <span className="font-medium">{user?.name || "-"}</span>
-                  </div>
-
-                  <div className="flex justify-between py-2 border-b">
-                    <span className="text-gray-500">Email</span>
-                    <span className="font-medium">{user?.email || "-"}</span>
-                  </div>
-
-                  <div className="flex justify-between py-2 border-b">
-                    <span className="text-gray-500">Rol</span>
-                    <span className="px-2 py-1 bg-[#2A9D8F]/10 text-[#2A9D8F] rounded-full text-sm font-medium">
-                      Transportista
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between py-2">
-                    <span className="text-gray-500">Estado</span>
-                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
-                      Activo
-                    </span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </div>
+      </nav>
 
       <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
         <DialogContent className="max-w-4xl">
