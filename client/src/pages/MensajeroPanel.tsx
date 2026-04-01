@@ -441,6 +441,7 @@ function OfferView(props: {
   offer: BackendService;
   onAccept: () => Promise<void> | void;
   isAccepting: boolean;
+  onOmit?: () => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
 
@@ -537,7 +538,12 @@ function OfferView(props: {
         >
           {props.isAccepting ? "Aceptando..." : "Aceptar"}
         </Button>
-        <button type="button" className="w-full text-sm font-medium text-gray-500">
+        <button
+          type="button"
+          disabled={props.isAccepting}
+          onClick={() => props.onOmit?.()}
+          className="w-full text-sm font-medium text-gray-500 disabled:opacity-50"
+        >
           Omitir
         </button>
       </div>
@@ -1061,6 +1067,19 @@ export default function MensajeroPanel() {
     }
   };
 
+  const handleOmitCurrentOffer = useCallback(() => {
+    setAvailableServices((prev) => {
+      if (prev.length === 0) return prev;
+      const omittedId = prev[0].service_id;
+      setOfferIdByServiceId((m) => {
+        const next = { ...m };
+        delete next[omittedId];
+        return next;
+      });
+      return prev.filter((s) => s.service_id !== omittedId);
+    });
+  }, []);
+
   const handleStartService = async (service: BackendService) => {
     if (!actorId) {
       toast.error("No hay actor_id disponible para el mensajero");
@@ -1215,7 +1234,11 @@ export default function MensajeroPanel() {
         formData.append("lng", String(currentLng));
       }
 
-      await http.post(`/v1/services/${service.service_id}/evidences`, formData);
+      await http.post(`/v1/services/${service.service_id}/evidences`, formData, {
+        headers: {
+          "Content-Type": undefined,
+        },
+      });
 
       toast.success("Evidencia subida correctamente");
       clearEvidenceDraft();
@@ -1362,6 +1385,7 @@ export default function MensajeroPanel() {
         offer={firstOffer}
         onAccept={() => handleAcceptService(firstOffer.service_id, firstOffer)}
         isAccepting={claimingServiceId === firstOffer.service_id}
+        onOmit={handleOmitCurrentOffer}
       />
     );
   }
