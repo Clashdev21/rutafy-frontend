@@ -1196,13 +1196,16 @@ export default function MensajeroPanel() {
   };
 
   const uploadEvidenceForService = async (service: BackendService) => {
-    if (!actorId) {
-      toast.error("No hay actor_id disponible para el mensajero");
+    const actorIdForEvidence =
+      user?.actor_id != null ? String(user.actor_id).trim() : "";
+
+    if (!actorIdForEvidence) {
+      toast.error("No hay actor_id en la sesión para subir evidencias");
       return false;
     }
 
-    if (!isValidUuid(actorId)) {
-      toast.error("El Mensajero ID debe ser un UUID válido");
+    if (!isValidUuid(actorIdForEvidence)) {
+      toast.error("El actor_id de la sesión no es un UUID válido");
       return false;
     }
 
@@ -1217,7 +1220,7 @@ export default function MensajeroPanel() {
       const formData = new FormData();
       formData.append("file", evidenceFile);
       formData.append("actor_role", "mensajero");
-      formData.append("actor_id", actorId);
+      formData.append("actor_id", actorIdForEvidence);
       formData.append("kind", "ENTREGA_DOCUMENTO");
 
       if (evidenceNote.trim()) {
