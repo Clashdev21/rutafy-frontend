@@ -1218,7 +1218,6 @@ export default function MensajeroPanel() {
 
     try {
       const formData = new FormData();
-      formData.append("file", evidenceFile);
       formData.append("actor_role", "mensajero");
       formData.append("actor_id", actorIdForEvidence);
       formData.append("kind", "ENTREGA_DOCUMENTO");
@@ -1236,6 +1235,8 @@ export default function MensajeroPanel() {
       if (currentLng !== null) {
         formData.append("lng", String(currentLng));
       }
+
+      formData.append("file", evidenceFile);
 
       await http.post(`/v1/services/${service.service_id}/evidences`, formData, {
         headers: {
