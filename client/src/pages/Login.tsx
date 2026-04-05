@@ -3,12 +3,12 @@ import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import rutafyLogo from "@/assets/rutafy-logo.png";
 import { http } from "@/api/http";
 import { clearToken, setToken } from "@/authStorage";
 import { normalizeAuthUser } from "@/authUser";
 import { toast } from "sonner";
-import { ArrowLeft, LogIn, Loader2 } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import axios from "axios";
 
@@ -16,6 +16,7 @@ export default function Login() {
   const [, setLocation] = useLocation();
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isPending, setIsPending] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -76,121 +77,118 @@ export default function Login() {
   };
 
   return (
-    <div className="mobile-shell bg-gradient-to-b from-[#1E3A5F] to-[#152A4A] safe-top safe-bottom">
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
-        {/* Back Button */}
+    <div className="mobile-shell bg-[#102033] safe-top safe-bottom">
+      <div className="flex flex-1 flex-col items-center justify-center px-6 py-12">
         <motion.button
-          initial={{ opacity: 0, x: -20 }}
+          type="button"
+          initial={{ opacity: 0, x: -12 }}
           animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.25 }}
           onClick={() => setLocation("/")}
-          className="absolute top-6 left-6 text-white/70 hover:text-white flex items-center gap-2"
+          className="absolute left-4 top-[max(1rem,env(safe-area-inset-top))] flex min-h-[44px] items-center gap-2 rounded-lg px-3 py-2 text-sm text-white/80 transition hover:text-white active:bg-white/10"
         >
-          <ArrowLeft className="w-5 h-5" />
+          <ArrowLeft className="h-5 w-5 shrink-0" aria-hidden />
           <span>Volver</span>
         </motion.button>
 
-        {/* Logo */}
         <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.5 }}
-          className="mb-8"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="mb-8 mt-10"
         >
-          <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center shadow-2xl">
-            <svg viewBox="0 0 100 100" className="w-12 h-12">
-              <path
-                d="M30 35 L50 25 L70 35 L70 50 L50 60 L30 50 Z"
-                fill="none"
-                stroke="#36f532"
-                strokeWidth="4"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M30 50 L30 65 L50 75 L70 65 L70 50"
-                fill="none"
-                stroke="#36f532"
-                strokeWidth="4"
-                strokeLinejoin="round"
-              />
-              <circle cx="50" cy="45" r="8" fill="#36f532" />
-            </svg>
-          </div>
+          <img
+            src={rutafyLogo}
+            alt="Rutafy"
+            className="mx-auto h-16 w-auto object-contain drop-shadow-md"
+          />
         </motion.div>
 
-        {/* Login Card */}
         <motion.div
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.2, duration: 0.5 }}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.05 }}
           className="w-full max-w-sm"
         >
-          <Card className="border-0 shadow-2xl">
-            <CardHeader className="text-center">
-              <CardTitle className="text-2xl text-[#1E3A5F]">Iniciar Sesión</CardTitle>
-              <CardDescription>
-                Ingresa con tu teléfono y contraseña
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Teléfono</Label>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    placeholder="Ej: 3001234567"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    disabled={isPending}
-                    autoComplete="tel"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password">Contraseña</Label>
+          <div className="rounded-2xl border border-[#E2E8F0] bg-[#FFFFFF] p-6 shadow-lg">
+            <h1 className="text-center text-2xl font-semibold leading-tight text-[#0F172A]">Entrar</h1>
+            <p className="mt-1 text-center text-sm leading-relaxed text-[#64748B]">
+              Usa tu teléfono y contraseña
+            </p>
+
+            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="phone" className="text-[#0F172A]">
+                  Teléfono
+                </Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="Ej: 3001234567"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  disabled={isPending}
+                  autoComplete="tel"
+                  className="rounded-xl border-[#E2E8F0] bg-white"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-[#0F172A]">
+                  Contraseña
+                </Label>
+                <div className="relative">
                   <Input
                     id="password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={isPending}
                     autoComplete="current-password"
+                    className="rounded-xl border-[#E2E8F0] bg-white pr-12"
                   />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                    className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-[#64748B] transition hover:bg-[#F1F5F9] hover:text-[#0F172A]"
+                    onClick={() => setShowPassword((v) => !v)}
+                    disabled={isPending}
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
                 </div>
-                <Button
-                  type="submit"
-                  className="w-full bg-[#36f532] hover:bg-[#2dd429] text-[#1E3A5F] font-semibold"
-                  disabled={isPending}
-                >
-                  {isPending ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Iniciando...
-                    </>
-                  ) : (
-                    <>
-                      <LogIn className="w-4 h-4 mr-2" />
-                      Iniciar Sesión
-                    </>
-                  )}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+              </div>
+              <Button
+                type="submit"
+                className="h-12 w-full rounded-xl bg-[#2A9D8F] font-semibold text-white shadow-sm hover:bg-[#1F6F66] disabled:opacity-70"
+                disabled={isPending}
+              >
+                {isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
+                    Entrando…
+                  </>
+                ) : (
+                  "Entrar"
+                )}
+              </Button>
+            </form>
+          </div>
         </motion.div>
 
-        {/* Help Text */}
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.5 }}
-          className="mt-6 text-white/50 text-sm text-center"
+          transition={{ duration: 0.25, delay: 0.1 }}
+          className="mt-6 text-center text-sm text-[#94A3B8]"
         >
           ¿No tienes cuenta?{" "}
           <button
             type="button"
             onClick={() => setLocation("/register-transportista")}
-            className="text-[#36f532] hover:underline font-medium"
+            className="font-medium text-[#2A9D8F] underline-offset-4 transition hover:text-[#1F6F66] hover:underline"
           >
             Crear cuenta
           </button>
