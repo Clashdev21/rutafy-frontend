@@ -21,6 +21,20 @@ export async function closeService(serviceId: string, close_pin: string) {
   return data;
 }
 
+export async function cancelServiceByTransportista(
+  serviceId: string,
+  requesterCompanyId: string,
+) {
+  const { data } = await http.post(
+    `/v1/services/${encodeURIComponent(serviceId)}/cancel`,
+    {
+      actor_role: "transportista",
+      actor_id: requesterCompanyId,
+    },
+  );
+  return data;
+}
+
 export async function getActiveOffersByMessenger(messengerId: string) {
   const { data } = await http.get(
     `/v1/messengers/${encodeURIComponent(messengerId)}/offers/active`

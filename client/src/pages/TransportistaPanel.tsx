@@ -1,6 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { http } from "@/api/http";
-import { createService } from "@/api/services";
+import { cancelServiceByTransportista, createService } from "@/api/services";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,6 +51,7 @@ import {
   Home,
   MessageSquarePlus,
   Loader2,
+  Ban,
 } from "lucide-react";
 import axios from "axios";
 import { useEffect, useMemo, useState } from "react";
@@ -202,6 +203,18 @@ const progressSteps: Array<{ key: string; label: string }> = [
   { key: "STARTED", label: "En ruta" },
   { key: "CLOSED", label: "Finalizado" },
 ];
+
+/** Estados en los que el transportista puede cancelar antes de que un mensajero tome el servicio. */
+const TRANSPORTISTA_CANCELABLE_STATUSES = new Set([
+  "REQUESTED",
+  "PENDING",
+  "SEARCHING",
+  "OFFERED",
+]);
+
+function isTransportistaCancelableServiceStatus(status: string): boolean {
+  return TRANSPORTISTA_CANCELABLE_STATUSES.has(String(status || "").toUpperCase());
+}
 
 function getProgressStepIndex(status: string): number {
   const idx = progressSteps.findIndex(
@@ -432,6 +445,7 @@ export default function TransportistaPanel() {
   const [selectedHistoryService, setSelectedHistoryService] = useState<LocalServiceItem | null>(null);
   const [detailEvidences, setDetailEvidences] = useState<ServiceEvidenceItem[]>([]);
   const [detailEvidencesLoading, setDetailEvidencesLoading] = useState(false);
+  const [cancellingServiceId, setCancellingServiceId] = useState<string | null>(null);
   const [reportBlockOpen, setReportBlockOpen] = useState(false);
   const [reportNote, setReportNote] = useState("");
   const [copiedCode, setCopiedCode] = useState(false);
@@ -567,6 +581,39 @@ export default function TransportistaPanel() {
       toast.error(message || "No fue posible cargar historial");
     } finally {
       setIsLoadingHistory(false);
+    }
+  };
+
+  const handleCancelServiceAsTransportista = async (service: LocalServiceItem) => {
+    if (!isTransportistaCancelableServiceStatus(service.status)) return;
+    if (
+      !window.confirm(
+        "¿Cancelar este servicio? Aún no ha sido tomado por un mensajero. Esta acción no se puede deshacer.",
+      )
+    ) {
+      return;
+    }
+    setCancellingServiceId(service.id);
+    try {
+      await cancelServiceByTransportista(service.id, effectiveCompanyId);
+      toast.success("Servicio cancelado");
+      if (selectedHistoryService?.id === service.id) {
+        setSelectedHistoryService(null);
+        setReportBlockOpen(false);
+        setReportNote("");
+      }
+      await loadTransportistaHistory();
+    } catch (error: unknown) {
+      const message = axios.isAxiosError(error)
+        ? (error.response?.data as { message?: string; error?: string })?.message ??
+          (error.response?.data as { error?: string })?.error ??
+          error.message
+        : error instanceof Error
+          ? error.message
+          : "No se pudo cancelar el servicio";
+      toast.error(message || "No se pudo cancelar el servicio");
+    } finally {
+      setCancellingServiceId(null);
     }
   };
 
@@ -911,6 +958,28 @@ export default function TransportistaPanel() {
                 </div>
 
                 <ServiceOperationalPreview service={activeService} variant="onColor" />
+
+                {isTransportistaCancelableServiceStatus(activeService.status) ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full rounded-xl bg-white/15 text-white border border-white/25 hover:bg-white/25"
+                    disabled={cancellingServiceId === activeService.id}
+                    onClick={() => void handleCancelServiceAsTransportista(activeService)}
+                  >
+                    {cancellingServiceId === activeService.id ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin shrink-0" aria-hidden />
+                        Cancelando…
+                      </>
+                    ) : (
+                      <>
+                        <Ban className="w-4 h-4 mr-2 shrink-0" aria-hidden />
+                        Cancelar servicio
+                      </>
+                    )}
+                  </Button>
+                ) : null}
               </div>
             ) : (
               <div className="flex items-start justify-between gap-3">
@@ -1273,6 +1342,29 @@ export default function TransportistaPanel() {
                 </div>
 
                 <ServiceOperationalPreview service={activeService} variant="onCard" />
+
+                {isTransportistaCancelableServiceStatus(activeService.status) ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full rounded-xl border-red-200 text-red-700 hover:bg-red-50"
+                    disabled={cancellingServiceId === activeService.id}
+                    onClick={() => void handleCancelServiceAsTransportista(activeService)}
+                  >
+                    {cancellingServiceId === activeService.id ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin shrink-0" aria-hidden />
+                        Cancelando…
+                      </>
+                    ) : (
+                      <>
+                        <Ban className="w-4 h-4 mr-2 shrink-0" aria-hidden />
+                        Cancelar servicio
+                      </>
+                    )}
+                  </Button>
+                ) : null}
 
                 {activeService.closePin &&
                   activeService.closePin !== "N/D" &&
@@ -1659,6 +1751,29 @@ export default function TransportistaPanel() {
               </dl>
 
               <ServiceOperationalPreview service={selectedHistoryService} variant="onCard" />
+
+              {isTransportistaCancelableServiceStatus(selectedHistoryService.status) ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full rounded-xl border-red-200 text-red-700 hover:bg-red-50"
+                  disabled={cancellingServiceId === selectedHistoryService.id}
+                  onClick={() => void handleCancelServiceAsTransportista(selectedHistoryService)}
+                >
+                  {cancellingServiceId === selectedHistoryService.id ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin shrink-0" aria-hidden />
+                      Cancelando…
+                    </>
+                  ) : (
+                    <>
+                      <Ban className="w-4 h-4 mr-2 shrink-0" aria-hidden />
+                      Cancelar servicio
+                    </>
+                  )}
+                </Button>
+              ) : null}
 
               <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 space-y-2">
                 <p className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
