@@ -137,6 +137,34 @@ type BackendServicesListResponse = {
   error?: string;
 };
 
+/** Respuesta de GET /v1/services/:id/evidences (campos usados en UI). */
+type ServiceEvidenceItem = {
+  evidence_id: string;
+  kind: string;
+  file_url: string;
+  mime_type: string | null;
+  note: string | null;
+  created_at: string;
+};
+
+const RAW_EVIDENCE_API_BASE =
+  typeof import.meta !== "undefined" &&
+  import.meta.env &&
+  typeof import.meta.env.VITE_RUTAFY_API_BASE === "string"
+    ? import.meta.env.VITE_RUTAFY_API_BASE.trim()
+    : "";
+
+const EVIDENCE_ASSETS_BASE =
+  RAW_EVIDENCE_API_BASE && /^https?:\/\//i.test(RAW_EVIDENCE_API_BASE)
+    ? RAW_EVIDENCE_API_BASE.replace(/\/+$/, "")
+    : "https://api.rutafy.app";
+
+function buildEvidenceAbsoluteUrl(fileUrl?: string | null): string | null {
+  if (!fileUrl) return null;
+  if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
+  return `${EVIDENCE_ASSETS_BASE}${fileUrl}`;
+}
+
 const DEFAULT_REQUESTER_COMPANY_ID = "1e62b8f8-b4ec-4d9a-9d8b-0015bf97d01a";
 
 const statusLabels: Record<string, string> = {
@@ -402,6 +430,8 @@ export default function TransportistaPanel() {
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [selectedHistoryService, setSelectedHistoryService] = useState<LocalServiceItem | null>(null);
+  const [detailEvidences, setDetailEvidences] = useState<ServiceEvidenceItem[]>([]);
+  const [detailEvidencesLoading, setDetailEvidencesLoading] = useState(false);
   const [reportBlockOpen, setReportBlockOpen] = useState(false);
   const [reportNote, setReportNote] = useState("");
   const [copiedCode, setCopiedCode] = useState(false);
@@ -565,6 +595,39 @@ export default function TransportistaPanel() {
     void loadNodes();
     void loadTransportistaHistory();
   }, [loading, user]);
+
+  useEffect(() => {
+    if (!selectedHistoryService) {
+      setDetailEvidences([]);
+      setDetailEvidencesLoading(false);
+      return;
+    }
+    const serviceId = selectedHistoryService.id;
+    let cancelled = false;
+    setDetailEvidencesLoading(true);
+    setDetailEvidences([]);
+
+    http
+      .get<{ evidences?: ServiceEvidenceItem[] }>(
+        `/v1/services/${encodeURIComponent(serviceId)}/evidences`,
+      )
+      .then(({ data }) => {
+        if (cancelled) return;
+        setDetailEvidences(Array.isArray(data?.evidences) ? data.evidences : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDetailEvidences([]);
+        toast.error("No se pudieron cargar las evidencias");
+      })
+      .finally(() => {
+        if (!cancelled) setDetailEvidencesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedHistoryService?.id]);
 
   const handleLogout = async () => {
     await logout();
@@ -1596,6 +1659,71 @@ export default function TransportistaPanel() {
               </dl>
 
               <ServiceOperationalPreview service={selectedHistoryService} variant="onCard" />
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 space-y-2">
+                <p className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
+                  Evidencias del mensajero
+                </p>
+                {detailEvidencesLoading ? (
+                  <p className="text-xs text-slate-500 flex items-center gap-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" aria-hidden />
+                    Cargando…
+                  </p>
+                ) : detailEvidences.length === 0 ? (
+                  <p className="text-xs text-slate-500">Sin evidencias registradas aún.</p>
+                ) : (
+                  <ul className="space-y-3 max-h-64 overflow-y-auto pr-0.5">
+                    {detailEvidences.map((ev) => {
+                      const url = buildEvidenceAbsoluteUrl(ev.file_url);
+                      const mime = ev.mime_type ?? "";
+                      const looksImage =
+                        mime.startsWith("image/") ||
+                        /\.(jpe?g|png|gif|webp|heic|heif)(\?|$)/i.test(ev.file_url || "");
+                      return (
+                        <li
+                          key={ev.evidence_id}
+                          className="rounded-lg border border-slate-100 bg-white p-2 text-xs space-y-1.5"
+                        >
+                          <div className="flex flex-wrap justify-between gap-x-2 gap-y-0.5 text-slate-700">
+                            <span className="font-medium">{ev.kind}</span>
+                            <span className="text-slate-500 shrink-0">
+                              {formatDateTime(ev.created_at)}
+                            </span>
+                          </div>
+                          {ev.note ? (
+                            <p className="text-slate-600">
+                              <span className="font-medium text-slate-700">Nota:</span> {ev.note}
+                            </p>
+                          ) : null}
+                          {url && looksImage ? (
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block rounded-md border border-slate-100 overflow-hidden"
+                            >
+                              <img
+                                src={url}
+                                alt={`Evidencia ${ev.kind}`}
+                                className="max-h-32 w-full object-contain bg-slate-50"
+                              />
+                            </a>
+                          ) : url ? (
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex text-[#2A9D8F] font-medium hover:underline"
+                            >
+                              Ver archivo
+                            </a>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
 
               <div className="pt-2 border-t border-gray-100">
                 {!reportBlockOpen ? (
