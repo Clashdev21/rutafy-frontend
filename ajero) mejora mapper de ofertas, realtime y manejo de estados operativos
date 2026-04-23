@@ -1,0 +1,4 @@
+warning: in the working copy of 'client/src/hooks/useMessengerOperationalState.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'client/src/pages/MensajeroPanel.tsx', LF will be replaced by CRLF the next time Git touches it
+client/src/hooks/useMessengerOperationalState.ts
+client/src/pages/MensajeroPanel.tsx

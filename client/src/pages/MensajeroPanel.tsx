@@ -300,14 +300,14 @@ function OfferView(props: {
         <div>
           <p className="text-xs uppercase tracking-wide text-gray-400">Recoger en</p>
           <p className="text-base font-medium text-gray-900 mt-1">
-            {props.offer.origin || "Origen no disponible"}
+            {getOrigin(props.offer)}
           </p>
         </div>
 
         <div>
           <p className="text-xs uppercase tracking-wide text-gray-400">Entregar en</p>
           <p className="text-base font-medium text-gray-900 mt-1">
-            {props.offer.destination || "Destino no disponible"}
+            {getDestination(props.offer)}
           </p>
         </div>
       </div>

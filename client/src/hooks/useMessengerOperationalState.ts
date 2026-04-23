@@ -176,6 +176,78 @@ function extractOffersArray(payload: any): DispatchOfferLike[] {
   return [];
 }
 
+/** Claves alineadas con `getOrigin` en MensajeroPanel (origen legible). */
+const OFFER_ORIGIN_TEXT_KEYS = [
+  "origin",
+  "origin_node_name",
+  "origin_label",
+  "originName",
+  "pickup_address",
+  "pickupAddress",
+  "from",
+] as const;
+
+/** Claves alineadas con `getDestination` en MensajeroPanel. */
+const OFFER_DESTINATION_TEXT_KEYS = [
+  "destination",
+  "destination_node_name",
+  "destination_label",
+  "destinationName",
+  "dropoff_address",
+  "dropoffAddress",
+  "to",
+] as const;
+
+function pickFirstNonEmptyStringFromObject(
+  obj: Record<string, any> | null | undefined,
+  keys: readonly string[]
+): string | null {
+  if (!isObject(obj)) return null;
+  for (const key of keys) {
+    const raw = obj[key];
+    if (raw == null) continue;
+    const s = typeof raw === "string" ? raw.trim() : String(raw).trim();
+    if (s) return s;
+  }
+  return null;
+}
+
+/** `offer.meta` como base; `service.meta` sobrescribe (capa más específica). */
+function mergeOfferMetas(
+  offer: DispatchOfferLike,
+  nested: Partial<BackendService> | null
+): Record<string, any> | null {
+  const root = isObject(offer.meta) ? (offer.meta as Record<string, any>) : {};
+  const inner = nested && isObject(nested.meta) ? (nested.meta as Record<string, any>) : {};
+  if (!Object.keys(root).length && !Object.keys(inner).length) return null;
+  return { ...root, ...inner };
+}
+
+function resolveOfferOriginDestination(
+  offer: DispatchOfferLike,
+  nested: Partial<BackendService> | null,
+  mergedMeta: Record<string, any> | null
+): { origin: string | null; destination: string | null } {
+  const nestedRec = nested as Record<string, any> | null;
+  const offerRec = offer as Record<string, any>;
+
+  const metaObj = mergedMeta && Object.keys(mergedMeta).length ? mergedMeta : null;
+
+  const origin =
+    pickFirstNonEmptyStringFromObject(nestedRec, OFFER_ORIGIN_TEXT_KEYS) ??
+    pickFirstNonEmptyStringFromObject(offerRec, OFFER_ORIGIN_TEXT_KEYS) ??
+    pickFirstNonEmptyStringFromObject(metaObj, OFFER_ORIGIN_TEXT_KEYS) ??
+    null;
+
+  const destination =
+    pickFirstNonEmptyStringFromObject(nestedRec, OFFER_DESTINATION_TEXT_KEYS) ??
+    pickFirstNonEmptyStringFromObject(offerRec, OFFER_DESTINATION_TEXT_KEYS) ??
+    pickFirstNonEmptyStringFromObject(metaObj, OFFER_DESTINATION_TEXT_KEYS) ??
+    null;
+
+  return { origin, destination };
+}
+
 function mapOfferToBackendService(offer: DispatchOfferLike): BackendService | null {
   const nested = isObject(offer.service) ? (offer.service as Partial<BackendService>) : null;
   const serviceId = String(
@@ -185,6 +257,9 @@ function mapOfferToBackendService(offer: DispatchOfferLike): BackendService | nu
   if (!serviceId) return null;
 
   const status = String(nested?.status ?? offer.status ?? "REQUESTED").toUpperCase() as ServiceStatus;
+
+  const mergedMeta = mergeOfferMetas(offer, nested);
+  const { origin, destination } = resolveOfferOriginDestination(offer, nested, mergedMeta);
 
   return {
     service_id: serviceId,
@@ -196,9 +271,9 @@ function mapOfferToBackendService(offer: DispatchOfferLike): BackendService | nu
     mensajero_id: (nested?.mensajero_id ?? offer.mensajero_id ?? null) as string | null,
     start_code: nested?.start_code ?? null,
     close_code: nested?.close_code ?? null,
-    meta: (nested?.meta ?? offer.meta ?? null) as Record<string, any> | null,
-    origin: (nested?.origin ?? offer.origin ?? null) as string | null,
-    destination: (nested?.destination ?? offer.destination ?? null) as string | null,
+    meta: mergedMeta,
+    origin,
+    destination,
     expires_at: (nested?.expires_at ?? offer.expires_at ?? null) as string | null,
     created_at: nested?.created_at ?? offer.created_at,
     updated_at: nested?.updated_at ?? offer.updated_at,
