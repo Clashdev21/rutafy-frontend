@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { http } from "@/api/http";
 import { cancelServiceByTransportista, createService } from "@/api/services";
+import { useTransportistaOperationalState } from "@/hooks/useTransportistaOperationalState";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,7 +55,7 @@ import {
   Ban,
 } from "lucide-react";
 import axios from "axios";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 type ServiceMode = "EMPRESA" | "LIBRE";
@@ -524,6 +525,20 @@ export default function TransportistaPanel() {
     return null;
   }, [myServices]);
 
+  const {
+    operationalPhase,
+    isIdle,
+    isSearching,
+    isAssigned,
+    isInProgress,
+    isCompleted,
+    isCancelled,
+  } = useTransportistaOperationalState(myServices, activeService);
+
+  useEffect(() => {
+    console.debug("[transportista-operational-phase]", operationalPhase);
+  }, [operationalPhase]);
+
   const recentServices = useMemo(() => myServices.slice(0, 5), [myServices]);
 
   const loadNodes = async () => {
@@ -583,6 +598,24 @@ export default function TransportistaPanel() {
       setIsLoadingHistory(false);
     }
   };
+
+  const loadTransportistaHistoryRef = useRef(loadTransportistaHistory);
+  loadTransportistaHistoryRef.current = loadTransportistaHistory;
+
+  const isLoadingHistoryRef = useRef(isLoadingHistory);
+  isLoadingHistoryRef.current = isLoadingHistory;
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user || user.appRole !== "TRANSPORTISTA") return;
+
+    const intervalId = window.setInterval(() => {
+      if (isLoadingHistoryRef.current) return;
+      void loadTransportistaHistoryRef.current();
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [loading, user]);
 
   const handleCancelServiceAsTransportista = async (service: LocalServiceItem) => {
     if (!isTransportistaCancelableServiceStatus(service.status)) return;
@@ -1489,7 +1522,16 @@ export default function TransportistaPanel() {
   );
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)]">
+    <div
+      className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)]"
+      data-operational-phase={operationalPhase}
+      data-op-idle={isIdle ? "1" : "0"}
+      data-op-searching={isSearching ? "1" : "0"}
+      data-op-assigned={isAssigned ? "1" : "0"}
+      data-op-in-progress={isInProgress ? "1" : "0"}
+      data-op-completed={isCompleted ? "1" : "0"}
+      data-op-cancelled={isCancelled ? "1" : "0"}
+    >
       <div className="bg-[#2A9D8F] text-white p-4 shadow-sm">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
