@@ -421,6 +421,112 @@ function getServiceTypeLabel(serviceType?: string | null): string {
   return serviceTypeLabels[key] ?? serviceType;
 }
 
+/** Vista operativa mientras el dispatch busca mensajero (fase SEARCHING). */
+function SearchingServiceView({
+  activeService,
+  onCancel,
+  isCancelling,
+  canCancel,
+}: {
+  activeService: LocalServiceItem;
+  onCancel: () => void | Promise<void>;
+  isCancelling: boolean;
+  canCancel: boolean;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start gap-3">
+        <div
+          className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/20 shadow-inner"
+          aria-hidden
+        >
+          <span className="relative flex h-3 w-3">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-55" />
+            <span className="relative inline-flex h-3 w-3 rounded-full bg-white" />
+          </span>
+        </div>
+        <div className="min-w-0 flex-1 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/85">
+            Solicitud enviada
+          </p>
+          <h2 className="text-lg font-bold leading-snug text-white sm:text-xl">
+            Buscando mensajero...
+          </h2>
+          <p className="text-sm leading-relaxed text-white/90">
+            Estamos notificando a los mensajeros disponibles.
+          </p>
+          <p
+            className="flex items-start gap-2 text-xs leading-relaxed text-white/80"
+            role="status"
+          >
+            <span
+              className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-200 animate-pulse"
+              aria-hidden
+            />
+            <span>El sistema sigue activo buscando.</span>
+          </p>
+          <p className="text-xs leading-relaxed text-white/80">
+            Si nadie acepta, seguiremos buscando hasta que la solicitud venza o sea cancelada.
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/15 bg-white/10 p-4 text-sm text-white/95 backdrop-blur-sm">
+        <div className="space-y-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">
+              Recoger en
+            </p>
+            <p className="mt-0.5 font-medium text-white">{activeService.origin}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">
+              Entregar en
+            </p>
+            <p className="mt-0.5 font-medium text-white">{activeService.destination}</p>
+          </div>
+          <div className="border-t border-white/10 pt-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-white/60">
+              Tipo de servicio
+            </p>
+            <p className="mt-0.5 text-sm font-medium text-white">
+              {getServiceTypeLabel(activeService.serviceType)}
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 border-t border-white/10 pt-3 text-[11px] leading-relaxed text-white/55">
+          <p>
+            <span className="text-white/45">Código</span>{" "}
+            <span className="font-mono text-white/75">{activeService.serviceCode}</span>
+            <span className="mx-2 text-white/25">·</span>
+            <span className="text-white/45">PIN de cierre</span>{" "}
+            <span className="font-mono text-white/75">{activeService.closePin}</span>
+          </p>
+        </div>
+      </div>
+
+      {canCancel ? (
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-full rounded-xl border border-white/25 bg-white/15 text-white hover:bg-white/25"
+          disabled={isCancelling}
+          onClick={() => void onCancel()}
+        >
+          {isCancelling ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" aria-hidden />
+              Cancelando solicitud…
+            </>
+          ) : (
+            "Cancelar solicitud"
+          )}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 const statusBorderColors: Record<string, string> = {
   REQUESTED: "border-l-yellow-500",
   OFFERED: "border-l-amber-500",
@@ -894,7 +1000,14 @@ export default function TransportistaPanel() {
     <div className="space-y-6">
         <Card className="border-0 shadow-sm bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] text-white overflow-hidden">
           <CardContent className="p-4 md:p-6">
-            {activeService ? (
+            {isSearching && activeService ? (
+              <SearchingServiceView
+                activeService={activeService}
+                onCancel={() => void handleCancelServiceAsTransportista(activeService)}
+                isCancelling={cancellingServiceId === activeService.id}
+                canCancel={isTransportistaCancelableServiceStatus(activeService.status)}
+              />
+            ) : activeService ? (
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
