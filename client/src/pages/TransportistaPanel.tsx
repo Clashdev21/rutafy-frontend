@@ -122,6 +122,9 @@ type BackendServiceRow = {
   service_code?: string;
   closePin?: string;
   close_pin?: string;
+  /** Alternativas que algunos payloads pueden usar para el PIN de cierre */
+  pin?: string | null;
+  close_code?: string | null;
   requester_company_id?: string;
   request_mode?: string;
   scheduled_for?: string | null;
@@ -240,7 +243,10 @@ function normalizeCreateResponse(
 
   const serviceCode = String(data.serviceCode ?? data.service_code ?? data.code ?? id);
 
-  const closePin = String(data.closePin ?? data.close_pin ?? "----");
+  const d = data as Record<string, unknown>;
+  const closePin = String(
+    data.closePin ?? data.close_pin ?? d.pin ?? d.close_code ?? "----",
+  );
 
   return {
     id,
@@ -259,6 +265,17 @@ function normalizeBackendServiceToLocal(
   const origin = String(service.origin ?? "Origen no definido");
   const destination = String(service.destination ?? "Destino no definido");
 
+  const closePinRaw =
+    service.closePin ??
+    service.close_pin ??
+    service.pin ??
+    service.close_code ??
+    null;
+  const closePinNormalized =
+    closePinRaw != null && String(closePinRaw).trim() !== ""
+      ? String(closePinRaw).trim()
+      : "N/D";
+
   return {
     id,
     status: String(service.status ?? "REQUESTED"),
@@ -270,7 +287,7 @@ function normalizeBackendServiceToLocal(
         service.service_code ??
         `RTF-${id.slice(0, 6).toUpperCase()}`,
     ),
-    closePin: String(service.closePin ?? service.close_pin ?? "N/D"),
+    closePin: closePinNormalized,
     serviceMode: "LIBRE",
     requestMode:
       String(service.request_mode ?? "NOW").toUpperCase() === "SCHEDULED"
@@ -421,6 +438,17 @@ function getServiceTypeLabel(serviceType?: string | null): string {
   return serviceTypeLabels[key] ?? serviceType;
 }
 
+/** PIN de cierre listo para mostrar; `null` si no hay dato útil en `LocalServiceItem.closePin`. */
+function getUsableClosePin(service: LocalServiceItem): string | null {
+  const raw = String(service.closePin ?? "").trim();
+  if (!raw) return null;
+  const upper = raw.toUpperCase();
+  if (raw === "N/D" || raw === "----" || upper === "N/A" || upper === "NULL" || upper === "UNDEFINED") {
+    return null;
+  }
+  return raw;
+}
+
 /** Vista operativa mientras el dispatch busca mensajero (fase SEARCHING). */
 function SearchingServiceView({
   activeService,
@@ -494,14 +522,27 @@ function SearchingServiceView({
             </p>
           </div>
         </div>
-        <div className="mt-4 border-t border-white/10 pt-3 text-[11px] leading-relaxed text-white/55">
-          <p>
-            <span className="text-white/45">Código</span>{" "}
-            <span className="font-mono text-white/75">{activeService.serviceCode}</span>
-            <span className="mx-2 text-white/25">·</span>
-            <span className="text-white/45">PIN de cierre</span>{" "}
-            <span className="font-mono text-white/75">{activeService.closePin}</span>
-          </p>
+        <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-white/65">
+              Código de seguimiento
+            </p>
+            <p className="mt-1 font-mono text-sm text-white/90">{activeService.serviceCode}</p>
+          </div>
+          {getUsableClosePin(activeService) ? (
+            <div className="rounded-xl border border-white/20 bg-black/15 px-3 py-3 sm:px-4">
+              <p className="text-sm font-semibold text-white">PIN de cierre</p>
+              <p
+                className="mt-2 text-center font-mono text-2xl font-bold tracking-[0.2em] text-white sm:text-3xl"
+                translate="no"
+              >
+                {getUsableClosePin(activeService)}
+              </p>
+              <p className="mt-3 text-sm leading-relaxed text-white/85">
+                Entrégalo al mensajero solo cuando el servicio haya sido completado.
+              </p>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -1105,6 +1146,21 @@ export default function TransportistaPanel() {
 
                 <ServiceOperationalPreview service={activeService} variant="onColor" />
 
+                {getUsableClosePin(activeService) ? (
+                  <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 space-y-2">
+                    <p className="text-sm font-semibold text-white">PIN de cierre</p>
+                    <p
+                      className="text-center font-mono text-2xl font-bold tracking-[0.2em] text-white sm:text-3xl"
+                      translate="no"
+                    >
+                      {getUsableClosePin(activeService)}
+                    </p>
+                    <p className="text-xs leading-relaxed text-white/85">
+                      Entrégalo al mensajero solo cuando el servicio haya sido completado.
+                    </p>
+                  </div>
+                ) : null}
+
                 {isTransportistaCancelableServiceStatus(activeService.status) ? (
                   <Button
                     type="button"
@@ -1512,23 +1568,22 @@ export default function TransportistaPanel() {
                   </Button>
                 ) : null}
 
-                {activeService.closePin &&
-                  activeService.closePin !== "N/D" &&
-                  activeService.closePin !== "----" &&
-                  (activeService.status === "STARTED" ? (
+                {getUsableClosePin(activeService) ? (
+                  activeService.status === "STARTED" ? (
                     <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-3 space-y-2">
-                      <p className="text-xs font-semibold text-amber-800">
-                        PIN listo para cierre
-                      </p>
+                      <p className="text-sm font-semibold text-amber-900">PIN de cierre</p>
                       <div className="flex items-center justify-between gap-2">
-                        <p className="font-mono text-lg font-bold text-amber-900">
-                          {activeService.closePin}
+                        <p
+                          className="font-mono text-xl font-bold tracking-widest text-amber-950"
+                          translate="no"
+                        >
+                          {getUsableClosePin(activeService)}
                         </p>
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() =>
-                            copyToClipboard(activeService.closePin, "close")
+                            copyToClipboard(getUsableClosePin(activeService)!, "close")
                           }
                           className="shrink-0"
                         >
@@ -1539,36 +1594,41 @@ export default function TransportistaPanel() {
                           )}
                         </Button>
                       </div>
-                      <p className="text-xs text-amber-700">
-                        Úsalo al finalizar el servicio
+                      <p className="text-xs leading-relaxed text-amber-900/90">
+                        Entrégalo al mensajero solo cuando el servicio haya sido completado.
                       </p>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <p className="text-xs text-gray-500 mb-1">
-                          PIN de cierre
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                      <p className="text-sm font-semibold text-slate-900">PIN de cierre</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p
+                          className="font-mono text-xl font-bold tracking-widest text-slate-900"
+                          translate="no"
+                        >
+                          {getUsableClosePin(activeService)}
                         </p>
-                        <p className="font-mono text-sm font-semibold text-gray-800">
-                          {activeService.closePin}
-                        </p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            copyToClipboard(getUsableClosePin(activeService)!, "close")
+                          }
+                          className="shrink-0"
+                        >
+                          {copiedClosePin ? (
+                            <Check className="w-4 h-4 text-green-600" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                        </Button>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          copyToClipboard(activeService.closePin, "close")
-                        }
-                        className="shrink-0"
-                      >
-                        {copiedClosePin ? (
-                          <Check className="w-4 h-4 text-green-600" />
-                        ) : (
-                          <Copy className="w-4 h-4" />
-                        )}
-                      </Button>
+                      <p className="text-xs leading-relaxed text-slate-600">
+                        Entrégalo al mensajero solo cuando el servicio haya sido completado.
+                      </p>
                     </div>
-                  ))}
+                  )
+                ) : null}
 
                 {activeService.requestMode === "SCHEDULED" && activeService.scheduledFor && (
                   <div>
