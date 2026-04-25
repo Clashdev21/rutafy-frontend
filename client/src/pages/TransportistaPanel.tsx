@@ -2253,13 +2253,28 @@ function renderSharedForm({
   destinationSelectedNode: NodeItem | null;
   isLoadingNodes: boolean;
 }) {
+  const scrollFieldIntoView = (target: EventTarget | null) => {
+    if (typeof window === "undefined") return;
+    const element =
+      target && target instanceof HTMLElement
+        ? target
+        : target && target instanceof Element
+          ? (target as HTMLElement)
+          : null;
+    if (!element) return;
+    window.setTimeout(() => {
+      element.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+  };
+
   return (
-    <div className="space-y-5">
+    <div className="min-h-screen flex flex-col">
+      <div className="flex-1 overflow-y-auto pb-32 space-y-5">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {serviceMode === "LIBRE" ? (
           <div className="space-y-2">
             <Label>Tipo de servicio</Label>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               {[
                 { id: "DOCS" as UiServiceType, label: "Documentos", Icon: FileDoc },
                 { id: "PACKAGE" as UiServiceType, label: "Paquete", Icon: PhosphorPackage },
@@ -2271,11 +2286,14 @@ function renderSharedForm({
                   type="button"
                   onClick={() => setServiceType(option.id)}
                   className={`
+                    w-full
                     flex flex-col items-center justify-center
-                    h-32
-                    gap-3
+                    aspect-[4/3]
+                    gap-2.5
                     rounded-2xl
                     border
+                    px-2
+                    text-center
                     transition-all duration-200
                     active:scale-[0.96]
 
@@ -2286,8 +2304,8 @@ function renderSharedForm({
                     }
                   `}
                 >
-                  <option.Icon size={42} weight="duotone" />
-                  <span className="text-sm font-semibold text-center">
+                  <option.Icon size={36} weight="duotone" />
+                  <span className="w-full text-sm font-semibold leading-tight whitespace-normal break-words">
                     {option.label}
                   </span>
                 </button>
@@ -2399,6 +2417,7 @@ function renderSharedForm({
                       placeholder="Buscar por nombre, tipo o zona..."
                       value={originNodeSearch}
                       onChange={(e) => setOriginNodeSearch(e.target.value)}
+                      onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
                       className="h-8 text-xs rounded-xl"
                     />
                   </div>
@@ -2461,6 +2480,7 @@ function renderSharedForm({
               placeholder="Dirección o punto de recogida"
               value={origin}
               onChange={(e) => setOrigin(e.target.value)}
+              onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
             />
           </div>
         )}
@@ -2568,6 +2588,7 @@ function renderSharedForm({
                       placeholder="Buscar por nombre, tipo o zona..."
                       value={destinationNodeSearch}
                       onChange={(e) => setDestinationNodeSearch(e.target.value)}
+                      onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
                       className="h-8 text-xs rounded-xl"
                     />
                   </div>
@@ -2630,9 +2651,11 @@ function renderSharedForm({
               placeholder="Dirección o punto de entrega"
               value={destination}
               onChange={(e) => setDestination(e.target.value)}
+              onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
             />
           </div>
         )}
+      </div>
       </div>
     </div>
   );
