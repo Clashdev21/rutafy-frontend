@@ -122,9 +122,6 @@ type BackendServiceRow = {
   service_code?: string;
   closePin?: string;
   close_pin?: string;
-  /** Alternativas que algunos payloads pueden usar para el PIN de cierre */
-  pin?: string | null;
-  close_code?: string | null;
   requester_company_id?: string;
   request_mode?: string;
   scheduled_for?: string | null;
@@ -236,6 +233,81 @@ function mapUiTypeToBackendType(serviceType: UiServiceType): string {
   return "DOCS";
 }
 
+/** PIN de cierre real: exactamente 4 dígitos (solo `closePin` / `close_pin` del API). */
+const CLOSE_PIN_REGEX = /^\d{4}$/;
+
+function extractValidClosePinDigits(value: unknown): string | null {
+  const raw = value == null ? "" : String(value).trim();
+  if (!raw) return null;
+  const upper = raw.toUpperCase();
+  if (raw === "N/D" || raw === "----" || upper === "N/A" || upper === "NULL" || upper === "UNDEFINED") {
+    return null;
+  }
+  return CLOSE_PIN_REGEX.test(raw) ? raw : null;
+}
+
+/** Persistencia local del PIN de cierre (GET no devuelve pin; solo hash en backend). */
+const TRANSPORTISTA_CLOSE_PINS_LS_KEY = "rutafy.transportista.closePins.v1";
+
+function readPersistedTransportistaClosePins(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(TRANSPORTISTA_CLOSE_PINS_LS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, string>;
+    }
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
+function writePersistedTransportistaClosePins(map: Record<string, string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(TRANSPORTISTA_CLOSE_PINS_LS_KEY, JSON.stringify(map));
+  } catch {
+    /* ignore quota / modo privado */
+  }
+}
+
+function shouldClearPersistedTransportistaClosePin(status: string): boolean {
+  const s = status.toUpperCase();
+  if (s === "CLOSED" || s === "EXPIRED" || s === "NO_SHOW") return true;
+  if (s.startsWith("CANCELLED")) return true;
+  if (s === "FAILED_PICKUP" || s === "FAILED_DROPOFF") return true;
+  return false;
+}
+
+function removePersistedTransportistaClosePin(serviceId: string): void {
+  const id = String(serviceId).trim();
+  if (!id || id === "sin-id") return;
+  const map = readPersistedTransportistaClosePins();
+  if (!(id in map)) return;
+  delete map[id];
+  writePersistedTransportistaClosePins(map);
+}
+
+/** Guarda solo si `pin` cumple /^\d{4}$/ (tras extract). */
+function persistTransportistaClosePinIfValid(serviceId: string, pin: unknown): void {
+  const id = String(serviceId).trim();
+  if (!id || id === "sin-id") return;
+  const valid = extractValidClosePinDigits(pin);
+  if (!valid) return;
+  const map = readPersistedTransportistaClosePins();
+  map[id] = valid;
+  writePersistedTransportistaClosePins(map);
+}
+
+function readPersistedTransportistaClosePinForService(serviceId: string): string | null {
+  const id = String(serviceId).trim();
+  if (!id || id === "sin-id") return null;
+  const raw = readPersistedTransportistaClosePins()[id];
+  return extractValidClosePinDigits(raw);
+}
+
 function normalizeCreateResponse(
   data: BackendCreateServiceResponse,
 ): CreatedServiceInfo {
@@ -244,9 +316,8 @@ function normalizeCreateResponse(
   const serviceCode = String(data.serviceCode ?? data.service_code ?? data.code ?? id);
 
   const d = data as Record<string, unknown>;
-  const closePin = String(
-    data.closePin ?? data.close_pin ?? d.pin ?? d.close_code ?? "----",
-  );
+  const closePinRaw = d.closePin ?? d.close_pin;
+  const closePin = extractValidClosePinDigits(closePinRaw) ?? "N/D";
 
   return {
     id,
@@ -259,26 +330,29 @@ function normalizeBackendServiceToLocal(
   service: BackendServiceRow,
 ): LocalServiceItem {
   const id = String(service.service_id ?? service.id ?? "sin-id");
+  const status = String(service.status ?? "REQUESTED").toUpperCase();
   const createdAt = String(
     service.created_at ?? service.createdAt ?? new Date().toISOString(),
   );
   const origin = String(service.origin ?? "Origen no definido");
   const destination = String(service.destination ?? "Destino no definido");
 
-  const closePinRaw =
-    service.closePin ??
-    service.close_pin ??
-    service.pin ??
-    service.close_code ??
-    null;
-  const closePinNormalized =
-    closePinRaw != null && String(closePinRaw).trim() !== ""
-      ? String(closePinRaw).trim()
-      : "N/D";
+  const closePinFromApi = extractValidClosePinDigits(service.closePin ?? service.close_pin ?? null);
+
+  let closePinNormalized: string;
+  if (shouldClearPersistedTransportistaClosePin(status)) {
+    if (id !== "sin-id") {
+      removePersistedTransportistaClosePin(id);
+    }
+    closePinNormalized = closePinFromApi ?? "N/D";
+  } else {
+    closePinNormalized =
+      closePinFromApi ?? readPersistedTransportistaClosePinForService(id) ?? "N/D";
+  }
 
   return {
     id,
-    status: String(service.status ?? "REQUESTED"),
+    status,
     origin,
     destination,
     createdAt,
@@ -438,15 +512,9 @@ function getServiceTypeLabel(serviceType?: string | null): string {
   return serviceTypeLabels[key] ?? serviceType;
 }
 
-/** PIN de cierre listo para mostrar; `null` si no hay dato útil en `LocalServiceItem.closePin`. */
+/** PIN de cierre listo para mostrar; `null` si no hay `closePin` válido de 4 dígitos. */
 function getUsableClosePin(service: LocalServiceItem): string | null {
-  const raw = String(service.closePin ?? "").trim();
-  if (!raw) return null;
-  const upper = raw.toUpperCase();
-  if (raw === "N/D" || raw === "----" || upper === "N/A" || upper === "NULL" || upper === "UNDEFINED") {
-    return null;
-  }
-  return raw;
+  return extractValidClosePinDigits(service.closePin);
 }
 
 /** Vista operativa mientras el dispatch busca mensajero (fase SEARCHING). */
@@ -975,6 +1043,14 @@ export default function TransportistaPanel() {
       const response = (await createService(payload)) as BackendCreateServiceResponse;
 
       const normalized = normalizeCreateResponse(response);
+
+      if (normalized.id !== "sin-id") {
+        const res = response as Record<string, unknown>;
+        persistTransportistaClosePinIfValid(
+          normalized.id,
+          res.close_pin ?? res.closePin ?? normalized.closePin,
+        );
+      }
 
       setCreatedService(normalized);
 
@@ -1953,16 +2029,16 @@ export default function TransportistaPanel() {
                     </dd>
                   </div>
                 )}
-                {selectedHistoryService.closePin && (
+                {getUsableClosePin(selectedHistoryService) ? (
                   <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
                     <dt className="text-amber-700 text-xs font-medium uppercase tracking-wide flex items-center gap-1">
                       <KeyRound className="w-3 h-3" /> PIN de cierre
                     </dt>
                     <dd className="font-mono font-semibold text-amber-900 mt-1">
-                      {selectedHistoryService.closePin}
+                      {getUsableClosePin(selectedHistoryService)}
                     </dd>
                   </div>
-                )}
+                ) : null}
               </dl>
 
               <ServiceOperationalPreview service={selectedHistoryService} variant="onCard" />
@@ -2132,73 +2208,77 @@ export default function TransportistaPanel() {
             </DialogDescription>
           </DialogHeader>
 
-          {createdService && (
-            <div className="space-y-4 py-4">
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <p className="text-sm text-amber-700 mb-3">
-                  Información operativa del servicio:
-                </p>
+          {createdService &&
+            (() => {
+              const createdClosePin = extractValidClosePinDigits(createdService.closePin);
+              return (
+                <div className="space-y-4 py-4">
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-sm text-amber-700 mb-3">
+                      Información operativa del servicio:
+                    </p>
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-white rounded border border-amber-300">
-                    <div>
-                      <p className="text-xs text-amber-600">Código del servicio</p>
-                      <p className="font-mono text-lg font-bold text-amber-900 break-all">
-                        {createdService.serviceCode}
-                      </p>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 bg-white rounded border border-amber-300">
+                        <div>
+                          <p className="text-xs text-amber-600">Código del servicio</p>
+                          <p className="font-mono text-lg font-bold text-amber-900 break-all">
+                            {createdService.serviceCode}
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copyToClipboard(createdService.serviceCode, "code")}
+                        >
+                          {copiedCode ? (
+                            <Check className="w-4 h-4 text-green-600" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </div>
+
+                      {createdClosePin ? (
+                        <div className="flex items-center justify-between p-3 bg-white rounded border border-amber-300">
+                          <div>
+                            <p className="text-xs text-amber-600">PIN de cierre</p>
+                            <p className="font-mono text-xl font-bold text-amber-900">{createdClosePin}</p>
+                            <p className="text-xs text-amber-700 mt-1">
+                              Guárdalo para finalizar el servicio
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => copyToClipboard(createdClosePin, "close")}
+                          >
+                            {copiedClosePin ? (
+                              <Check className="w-4 h-4 text-green-600" />
+                            ) : (
+                              <Copy className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </div>
+                      ) : null}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyToClipboard(createdService.serviceCode, "code")}
-                    >
-                      {copiedCode ? (
-                        <Check className="w-4 h-4 text-green-600" />
-                      ) : (
-                        <Copy className="w-4 h-4" />
-                      )}
-                    </Button>
                   </div>
 
-                  <div className="flex items-center justify-between p-3 bg-white rounded border border-amber-300">
-                    <div>
-                      <p className="text-xs text-amber-600">PIN de cierre</p>
-                      <p className="font-mono text-xl font-bold text-amber-900">
-                        {createdService.closePin}
-                      </p>
-                      <p className="text-xs text-amber-700 mt-1">
-                        Guárdalo para finalizar el servicio
-                      </p>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyToClipboard(createdService.closePin, "close")}
-                    >
-                      {copiedClosePin ? (
-                        <Check className="w-4 h-4 text-green-600" />
-                      ) : (
-                        <Copy className="w-4 h-4" />
-                      )}
-                    </Button>
+                  <div className="rounded-lg border bg-gray-50 p-3">
+                    <p className="text-sm text-gray-700 mb-1">
+                      <strong>Inicio:</strong> el mensajero inicia sin código ni PIN.
+                    </p>
+                    <p className="text-sm text-gray-700">
+                      <strong>Cierre:</strong> el mensajero finaliza usando solo el PIN de cierre.
+                    </p>
                   </div>
+
+                  <p className="text-xs text-gray-500 text-center">
+                    ID del servicio: #{createdService.id}
+                  </p>
                 </div>
-              </div>
-
-              <div className="rounded-lg border bg-gray-50 p-3">
-                <p className="text-sm text-gray-700 mb-1">
-                  <strong>Inicio:</strong> el mensajero inicia sin código ni PIN.
-                </p>
-                <p className="text-sm text-gray-700">
-                  <strong>Cierre:</strong> el mensajero finaliza usando solo el PIN de cierre.
-                </p>
-              </div>
-
-              <p className="text-xs text-gray-500 text-center">
-                ID del servicio: #{createdService.id}
-              </p>
-            </div>
-          )}
+              );
+            })()}
 
           <DialogFooter>
             <Button
