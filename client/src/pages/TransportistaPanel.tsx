@@ -43,8 +43,6 @@ import {
   MapPin,
   Copy,
   Check,
-  ShieldCheck,
-  ClipboardList,
   KeyRound,
   MapPinned,
   RefreshCw,
@@ -948,16 +946,6 @@ export default function TransportistaPanel() {
     return user?.name?.split(" ")[0] || user?.email || "Transportista";
   }, [user]);
 
-  const stats = useMemo(() => {
-    return {
-      total: myServices.length,
-      requested: myServices.filter((s) => s.status === "REQUESTED").length,
-      claimed: myServices.filter((s) => s.status === "CLAIMED").length,
-      started: myServices.filter((s) => s.status === "STARTED").length,
-      closed: myServices.filter((s) => s.status === "CLOSED").length,
-    };
-  }, [myServices]);
-
   const activeService = useMemo(() => {
     const priority = [
       "STARTED",
@@ -997,7 +985,7 @@ export default function TransportistaPanel() {
     console.debug("[transportista-operational-phase]", operationalPhase);
   }, [operationalPhase]);
 
-  const recentServices = useMemo(() => myServices.slice(0, 5), [myServices]);
+  const activityServices = useMemo(() => myServices.slice(0, 30), [myServices]);
 
   const loadNodes = async () => {
     setIsLoadingNodes(true);
@@ -1358,6 +1346,7 @@ export default function TransportistaPanel() {
 
   const HomeView = () => {
     const activeClosePin = activeService ? getUsableClosePin(activeService) : null;
+    const isOperationalIdle = isIdle || !activeService;
     const handleReturnToIdle = () => {
       if (activeService?.id) {
         setDismissedTerminalServiceId(activeService.id);
@@ -1366,9 +1355,9 @@ export default function TransportistaPanel() {
     };
 
     return (
-      <div className="space-y-6">
+      <div className="space-y-5">
         <Card className="border-0 shadow-sm bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] text-white overflow-hidden">
-          <CardContent className="p-4 md:p-6">
+          <CardContent className="p-4">
             {isSearching && activeService ? (
               <SearchingServiceView
                 activeService={activeService}
@@ -1387,177 +1376,38 @@ export default function TransportistaPanel() {
             ) : isInProgress && activeService ? (
               <InProgressServiceView activeService={activeService} closePin={activeClosePin} />
             ) : isCompleted && activeService ? (
-              <CompletedServiceView
-                activeService={activeService}
-                onNewService={handleReturnToIdle}
-              />
+              <CompletedServiceView activeService={activeService} onNewService={handleReturnToIdle} />
             ) : isCancelled && activeService ? (
               <CancelledServiceView activeService={activeService} onRetry={handleReturnToIdle} />
-            ) : activeService ? (
-              <div className="space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 md:w-12 md:h-12 bg-white/20 rounded-2xl flex items-center justify-center shadow-inner">
-                      <Motorcycle className="w-5 h-5 md:w-6 md:h-6" />
-                    </div>
-                    <div>
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-white/80">
-                        Servicio activo
-                      </p>
-                      <p className="text-xs text-white/90 mt-0.5">
-                        {getServiceTypeLabel(activeService.serviceType)}
-                      </p>
-                      <p className="text-sm font-semibold text-white mt-0.5 line-clamp-2">
-                        {activeService.origin}{" "}
-                        <span className="mx-1">→</span>
-                        {activeService.destination}
-                      </p>
-                      <p className="text-xs font-mono text-white/80 mt-1">
-                        Código: {activeService.serviceCode}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div
-                    className={`rounded-2xl bg-white/12 px-3 py-2 text-xs md:text-sm backdrop-blur-sm ${
-                      activeService.status === "OFFERED" ? "animate-pulse" : ""
-                    }`}
-                  >
-                    <p className="text-white/80">Estado actual</p>
-                    <p className="font-semibold mt-0.5">
-                      {statusLabels[activeService.status] || activeService.status}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-1">
-                  {(() => {
-                    const stepIndex = getProgressStepIndex(activeService.status);
-                    const percent =
-                      (stepIndex / Math.max(progressSteps.length - 1, 1)) * 100;
-                    return (
-                      <div className="space-y-3">
-                        <div className="relative h-8">
-                          <div className="absolute top-1/2 left-0 right-0 h-1 -translate-y-1/2 rounded-full bg-white/20" />
-                          <div
-                            className="absolute -top-1 transition-all duration-500 ease-out"
-                            style={{
-                              left: `${percent}%`,
-                              transform: "translateX(-50%)",
-                            }}
-                          >
-                            <div className="h-8 w-8 rounded-full bg-white flex items-center justify-center shadow-md">
-                              <Motorcycle className="h-4 w-4 text-[#2A9D8F]" />
-                            </div>
-                          </div>
-                          <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-between px-1">
-                            {progressSteps.map((step, index) => {
-                              const isPast = index <= stepIndex;
-                              return (
-                                <div
-                                  key={step.key}
-                                  className="flex flex-col items-center w-full"
-                                >
-                                  <div
-                                    className={`h-2 w-2 rounded-full border border-white ${
-                                      isPast ? "bg-white" : "bg-transparent"
-                                    }`}
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        <div className="flex justify-between text-xs text-white/80">
-                          {progressSteps.map((step, index) => {
-                            const isPast = index <= stepIndex;
-                            return (
-                              <span
-                                key={step.key}
-                                className={`w-full text-center ${
-                                  isPast ? "font-semibold text-white" : ""
-                                }`}
-                              >
-                                {step.label}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                <ServiceOperationalPreview service={activeService} variant="onColor" />
-
-                {getUsableClosePin(activeService) ? (
-                  <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 space-y-2">
-                    <p className="text-sm font-semibold text-white">PIN de cierre</p>
-                    <p
-                      className="text-center font-mono text-2xl font-bold tracking-[0.2em] text-white sm:text-3xl"
-                      translate="no"
-                    >
-                      {getUsableClosePin(activeService)}
-                    </p>
-                    <p className="text-xs leading-relaxed text-white/85">
-                      Entrégalo al mensajero solo cuando el servicio haya sido completado.
-                    </p>
-                  </div>
-                ) : null}
-
-                {isTransportistaCancelableServiceStatus(activeService.status) ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="w-full rounded-xl bg-white/15 text-white border border-white/25 hover:bg-white/25"
-                    disabled={cancellingServiceId === activeService.id}
-                    onClick={() => void handleCancelServiceAsTransportista(activeService)}
-                  >
-                    {cancellingServiceId === activeService.id ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin shrink-0" aria-hidden />
-                        Cancelando…
-                      </>
-                    ) : (
-                      <>
-                        <Ban className="w-4 h-4 mr-2 shrink-0" aria-hidden />
-                        Cancelar servicio
-                      </>
-                    )}
-                  </Button>
-                ) : null}
-              </div>
             ) : (
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 md:w-12 md:h-12 bg-white/20 rounded-2xl flex items-center justify-center shadow-inner">
-                    <Truck className="w-5 h-5 md:w-6 md:h-6" />
-                  </div>
-                  <div>
-                    <h2 className="text-base md:text-lg font-semibold">
-                      Sin servicio activo
-                    </h2>
-                    <p className="text-white/85 mt-1 text-sm">
-                      Solicita un servicio o programa una recogida para empezar a operar.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl bg-white/12 px-4 py-3 text-sm backdrop-blur-sm">
-                  <p className="text-white/80">Estado general</p>
-                  <p className="font-semibold mt-1">
-                    Sin servicio activo
-                  </p>
-                </div>
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/85">
+                  Listo para operar
+                </p>
+                <h2 className="text-lg font-bold leading-snug text-white sm:text-xl">
+                  Sin servicio activo
+                </h2>
+                <p className="text-sm leading-relaxed text-white/90">
+                  Solicita un servicio para comenzar.
+                </p>
               </div>
             )}
           </CardContent>
         </Card>
 
-        <div className="space-y-4">
+        {isOperationalIdle ? (
+          <Button
+            type="button"
+            onClick={() => setExpandedPanel("NOW")}
+            className="w-full rounded-xl bg-[#2A9D8F] hover:bg-[#238b7e] h-12"
+          >
+            Solicitar servicio
+          </Button>
+        ) : null}
+
+        {isOperationalIdle && expandedPanel !== null ? (
           <Card className="border-0 shadow-sm overflow-hidden">
-            <CardHeader className="space-y-4 p-5 pb-0 md:p-6 md:pb-0">
+            <CardHeader className="space-y-4 p-5 pb-0">
               <CardTitle className="text-lg font-semibold text-slate-900">
                 Nuevo servicio
               </CardTitle>
@@ -1598,7 +1448,7 @@ export default function TransportistaPanel() {
             </CardHeader>
 
             {expandedPanel === "NOW" && (
-              <CardContent className="space-y-5 p-5 md:p-6 pt-4 transition-opacity duration-150">
+              <CardContent className="space-y-5 p-5 pt-4 transition-opacity duration-150">
                 {renderSharedForm({
                   serviceMode,
                   setServiceMode,
@@ -1649,7 +1499,7 @@ export default function TransportistaPanel() {
             )}
 
             {expandedPanel === "SCHEDULED" && (
-              <CardContent className="space-y-5 p-5 md:p-6 pt-4 transition-opacity duration-150">
+              <CardContent className="space-y-5 p-5 pt-4 transition-opacity duration-150">
                 <div className="space-y-2">
                   <Label>Fecha y hora programada</Label>
                   <Input
@@ -1709,286 +1559,68 @@ export default function TransportistaPanel() {
                 </div>
               </CardContent>
             )}
-
-            {expandedPanel === null && (
-              <CardContent className="p-5 md:p-6 pt-2 pb-6 text-center text-sm text-slate-500 transition-opacity duration-150">
-                Elige un modo arriba para continuar.
-              </CardContent>
-            )}
           </Card>
-        </div>
+        ) : null}
       </div>
     );
   };
 
   const ActivityView = () => (
-    <div className="space-y-6">
-        <Card className="border border-slate-200/80 bg-white shadow-sm overflow-hidden rounded-2xl">
-          <div className="flex flex-col gap-3 px-4 py-3 border-b border-slate-100 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <h2 className="text-base font-semibold text-slate-900">Actividad reciente</h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {recentServices.length === 0
-                  ? "Aquí verás tus últimos envíos."
-                  : `Últimos ${recentServices.length} servicios`}
-              </p>
+    <div className="space-y-4">
+      <Card className="border border-slate-200/80 bg-white shadow-sm overflow-hidden rounded-2xl">
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900">Historial</h2>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              void loadTransportistaHistory();
+            }}
+            disabled={isLoadingHistory}
+            className="h-8 rounded-lg text-slate-600"
+          >
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${isLoadingHistory ? "animate-spin" : ""}`} />
+            {isLoadingHistory ? "Actualizando..." : "Recargar"}
+          </Button>
+        </div>
+
+        <div className="px-3 py-3">
+          {activityServices.length === 0 ? (
+            <div className="text-center py-8 text-sm text-slate-400">
+              No tienes servicios registrados todavía.
             </div>
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  void loadTransportistaHistory();
-                }}
-                disabled={isLoadingHistory}
-                className="h-9 rounded-lg text-slate-600"
-              >
-                <RefreshCw className={`w-4 h-4 mr-1.5 ${isLoadingHistory ? "animate-spin" : ""}`} />
-                {isLoadingHistory ? "Actualizando..." : "Recargar"}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setIsHistoryOpen(true)}
-                className="h-9 rounded-lg border-slate-200 text-slate-700"
-              >
-                Ver historial completo
-              </Button>
-            </div>
-          </div>
-
-          <div className="px-3 py-2">
-            {recentServices.length === 0 ? (
-              <div className="text-center py-8 text-sm text-slate-400">
-                No tienes servicios registrados todavía.
-              </div>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {recentServices.map((service) => (
-                  <li key={service.id}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedHistoryService(service)}
-                      className="w-full text-left group flex items-start gap-2.5 py-3 px-2 rounded-lg transition-colors hover:bg-slate-50/90 active:bg-slate-100/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2A9D8F]/40 focus-visible:ring-offset-1"
-                    >
-                      <div className="flex-1 min-w-0 space-y-1.5">
-                        <p className="text-sm text-slate-800 leading-snug line-clamp-2">
-                          <span className="font-medium text-slate-900">{service.origin}</span>
-                          <span className="text-slate-400 mx-1">→</span>
-                          <span className="font-medium text-slate-900">{service.destination}</span>
-                        </p>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={`px-2 py-0.5 text-[11px] rounded-full font-medium ${
-                              statusColors[service.status] || "bg-gray-100 text-gray-700"
-                            }`}
-                          >
-                            {statusLabels[service.status] || service.status}
-                          </span>
-                          <span className="text-[11px] text-slate-500">
-                            {formatDateTime(service.createdAt)}
-                          </span>
-                          <span className="text-[11px] text-slate-400">
-                            {getServiceTypeLabel(service.serviceType)} ·{" "}
-                            {getRequestModeLabel(service.requestMode)}
-                          </span>
-                        </div>
-                        {service.requestMode === "SCHEDULED" && service.scheduledFor && (
-                          <p className="text-[11px] text-slate-500">
-                            Programado: {formatDateTime(service.scheduledFor)}
-                          </p>
-                        )}
-                        <p className="text-[11px] font-mono text-slate-400 truncate">
-                          {service.serviceCode}
-                        </p>
-                      </div>
-                      <ChevronRight
-                        className="w-4 h-4 text-slate-300 group-hover:text-slate-400 shrink-0 mt-0.5"
-                        aria-hidden
-                      />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </Card>
-
-        <Card className="border border-slate-200/70 bg-slate-50/40 shadow-none">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-medium text-slate-600 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-slate-400 shrink-0" strokeWidth={1.75} />
-              Resumen corto
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-0 px-4 pb-4 pt-0 text-sm">
-            <div className="flex justify-between gap-3 py-2 border-b border-slate-100/90">
-              <span className="text-slate-500">Total</span>
-              <span className="text-slate-700 font-medium tabular-nums">{stats.total}</span>
-            </div>
-            <div className="flex justify-between gap-3 py-2 border-b border-slate-100/90">
-              <span className="text-slate-500">Solicitados</span>
-              <span className="text-slate-700 font-medium tabular-nums">{stats.requested}</span>
-            </div>
-            <div className="flex justify-between gap-3 py-2 border-b border-slate-100/90">
-              <span className="text-slate-500">Tomados</span>
-              <span className="text-slate-700 font-medium tabular-nums">{stats.claimed}</span>
-            </div>
-            <div className="flex justify-between gap-3 py-2 border-b border-slate-100/90">
-              <span className="text-slate-500">En curso</span>
-              <span className="text-slate-700 font-medium tabular-nums">{stats.started}</span>
-            </div>
-            <div className="flex justify-between gap-3 py-2">
-              <span className="text-slate-500">Cerrados</span>
-              <span className="text-slate-700 font-medium tabular-nums">{stats.closed}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-0 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <ClipboardList className="w-5 h-5" />
-              Servicio activo
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!activeService ? (
-              <div className="rounded-2xl border border-dashed bg-slate-50 p-4 text-sm text-slate-500">
-                No tienes ningún servicio en curso en este momento.
-              </div>
-            ) : (
-              <div className="rounded-2xl border bg-white p-4 space-y-3">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span
-                    className={`px-2 py-0.5 text-xs rounded-full ${
-                      statusColors[activeService.status] || "bg-gray-100 text-gray-700"
-                    }`}
-                  >
-                    {statusLabels[activeService.status] || activeService.status}
-                  </span>
-
-                  <span className="px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-700">
-                    {getRequestModeLabel(activeService.requestMode)}
-                  </span>
-                </div>
-
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Ruta</p>
-                  <p className="text-sm text-gray-800">
-                    <strong>{activeService.origin}</strong>
-                    <span className="mx-2">→</span>
-                    <strong>{activeService.destination}</strong>
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">Código</p>
-                  <p className="font-mono text-sm font-semibold text-[#2A9D8F] break-all">
-                    {activeService.serviceCode}
-                  </p>
-                </div>
-
-                <ServiceOperationalPreview service={activeService} variant="onCard" />
-
-                {isTransportistaCancelableServiceStatus(activeService.status) ? (
-                  <Button
+          ) : (
+            <ul className="space-y-2">
+              {activityServices.map((service) => (
+                <li key={service.id}>
+                  <button
                     type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full rounded-xl border-red-200 text-red-700 hover:bg-red-50"
-                    disabled={cancellingServiceId === activeService.id}
-                    onClick={() => void handleCancelServiceAsTransportista(activeService)}
+                    onClick={() => setSelectedHistoryService(service)}
+                    className="w-full text-left rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-3 transition-colors hover:bg-slate-100/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2A9D8F]/40 focus-visible:ring-offset-1"
                   >
-                    {cancellingServiceId === activeService.id ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin shrink-0" aria-hidden />
-                        Cancelando…
-                      </>
-                    ) : (
-                      <>
-                        <Ban className="w-4 h-4 mr-2 shrink-0" aria-hidden />
-                        Cancelar servicio
-                      </>
-                    )}
-                  </Button>
-                ) : null}
-
-                {getUsableClosePin(activeService) ? (
-                  activeService.status === "STARTED" ? (
-                    <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-3 space-y-2">
-                      <p className="text-sm font-semibold text-amber-900">PIN de cierre</p>
-                      <div className="flex items-center justify-between gap-2">
-                        <p
-                          className="font-mono text-xl font-bold tracking-widest text-amber-950"
-                          translate="no"
-                        >
-                          {getUsableClosePin(activeService)}
-                        </p>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            copyToClipboard(getUsableClosePin(activeService)!, "close")
-                          }
-                          className="shrink-0"
-                        >
-                          {copiedClosePin ? (
-                            <Check className="w-4 h-4 text-green-600" />
-                          ) : (
-                            <Copy className="w-4 h-4" />
-                          )}
-                        </Button>
-                      </div>
-                      <p className="text-xs leading-relaxed text-amber-900/90">
-                        Entrégalo al mensajero solo cuando el servicio haya sido completado.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
-                      <p className="text-sm font-semibold text-slate-900">PIN de cierre</p>
-                      <div className="flex items-center justify-between gap-2">
-                        <p
-                          className="font-mono text-xl font-bold tracking-widest text-slate-900"
-                          translate="no"
-                        >
-                          {getUsableClosePin(activeService)}
-                        </p>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            copyToClipboard(getUsableClosePin(activeService)!, "close")
-                          }
-                          className="shrink-0"
-                        >
-                          {copiedClosePin ? (
-                            <Check className="w-4 h-4 text-green-600" />
-                          ) : (
-                            <Copy className="w-4 h-4" />
-                          )}
-                        </Button>
-                      </div>
-                      <p className="text-xs leading-relaxed text-slate-600">
-                        Entrégalo al mensajero solo cuando el servicio haya sido completado.
-                      </p>
-                    </div>
-                  )
-                ) : null}
-
-                {activeService.requestMode === "SCHEDULED" && activeService.scheduledFor && (
-                  <div>
-                    <p className="text-xs text-gray-500 mb-1">Programado</p>
-                    <p className="text-sm text-gray-800">
-                      {formatDateTime(activeService.scheduledFor)}
+                    <p className="text-sm text-slate-900 font-medium leading-snug">
+                      {service.origin} <span className="text-slate-400 mx-1">→</span> {service.destination}
                     </p>
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`px-2 py-0.5 text-[11px] rounded-full font-medium ${
+                          statusColors[service.status] || "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {statusLabels[service.status] || service.status}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {formatDateTime(service.createdAt)}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Card>
+    </div>
   );
 
   const AccountView = () => (
@@ -2052,7 +1684,7 @@ export default function TransportistaPanel() {
       data-op-cancelled={isCancelled ? "1" : "0"}
     >
       <div className="bg-[#2A9D8F] text-white p-4 shadow-sm">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
+        <div className="max-w-md mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setLocation("/")}
@@ -2086,7 +1718,7 @@ export default function TransportistaPanel() {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto p-4 md:p-6 pb-28">
+      <div className="max-w-md mx-auto p-4 md:p-6 pb-28">
         {activeTab === "home" && <HomeView />}
         {activeTab === "activity" && <ActivityView />}
         {activeTab === "account" && <AccountView />}
@@ -2096,7 +1728,7 @@ export default function TransportistaPanel() {
         className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/80 bg-white/95 backdrop-blur-md shadow-[0_-4px_24px_rgba(15,23,42,0.07)] pb-[env(safe-area-inset-bottom,0)]"
         aria-label="Navegación principal"
       >
-        <div className="max-w-6xl mx-auto flex items-stretch justify-around gap-0.5 px-1.5 pt-1 pb-1.5 sm:px-2">
+        <div className="max-w-md mx-auto flex items-stretch justify-around gap-0.5 px-1.5 pt-1 pb-1.5 sm:px-2">
           <button
             type="button"
             onClick={() => setActiveTab("home")}
