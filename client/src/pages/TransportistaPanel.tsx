@@ -774,6 +774,96 @@ function InProgressServiceView({
   );
 }
 
+function CompletedServiceView({
+  activeService,
+  onNewService,
+}: {
+  activeService: LocalServiceItem;
+  onNewService: () => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/85">
+          Servicio finalizado
+        </p>
+        <h2 className="text-lg font-bold leading-snug text-white sm:text-xl">
+          Tu servicio fue completado exitosamente
+        </h2>
+      </div>
+
+      <div className="rounded-2xl border border-white/15 bg-white/10 p-4 text-sm text-white/95 backdrop-blur-sm space-y-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">
+            Recoger en
+          </p>
+          <p className="mt-0.5 font-medium text-white">{activeService.origin}</p>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">
+            Entregar en
+          </p>
+          <p className="mt-0.5 font-medium text-white">{activeService.destination}</p>
+        </div>
+      </div>
+
+      <Button
+        type="button"
+        variant="secondary"
+        className="w-full rounded-xl border border-white/25 bg-white/15 text-white hover:bg-white/25"
+        onClick={onNewService}
+      >
+        Solicitar otro servicio
+      </Button>
+    </div>
+  );
+}
+
+function CancelledServiceView({
+  activeService,
+  onRetry,
+}: {
+  activeService: LocalServiceItem;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/85">
+          Servicio cancelado
+        </p>
+        <h2 className="text-lg font-bold leading-snug text-white sm:text-xl">
+          El servicio fue cancelado
+        </h2>
+      </div>
+
+      <div className="rounded-2xl border border-white/15 bg-white/10 p-4 text-sm text-white/95 backdrop-blur-sm space-y-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">
+            Recoger en
+          </p>
+          <p className="mt-0.5 font-medium text-white">{activeService.origin}</p>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">
+            Entregar en
+          </p>
+          <p className="mt-0.5 font-medium text-white">{activeService.destination}</p>
+        </div>
+      </div>
+
+      <Button
+        type="button"
+        variant="secondary"
+        className="w-full rounded-xl border border-white/25 bg-white/15 text-white hover:bg-white/25"
+        onClick={onRetry}
+      >
+        Solicitar nuevamente
+      </Button>
+    </div>
+  );
+}
+
 const statusBorderColors: Record<string, string> = {
   REQUESTED: "border-l-yellow-500",
   OFFERED: "border-l-amber-500",
@@ -807,6 +897,7 @@ export default function TransportistaPanel() {
   const [isCreatingNow, setIsCreatingNow] = useState(false);
   const [isCreatingScheduled, setIsCreatingScheduled] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [dismissedTerminalServiceId, setDismissedTerminalServiceId] = useState<string | null>(null);
 
   const [serviceMode, setServiceMode] = useState<ServiceMode>("LIBRE");
   const [serviceType, setServiceType] = useState<UiServiceType>("DOCS");
@@ -868,15 +959,29 @@ export default function TransportistaPanel() {
   }, [myServices]);
 
   const activeService = useMemo(() => {
-    const priority = ["STARTED", "CLAIMED", "OFFERED", "REQUESTED"];
+    const priority = [
+      "STARTED",
+      "CLAIMED",
+      "OFFERED",
+      "REQUESTED",
+      "CLOSED",
+      "CANCELLED_BY_TRANSPORTER",
+      "CANCELLED_BY_MESSENGER",
+      "EXPIRED",
+      "FAILED_PICKUP",
+      "FAILED_DROPOFF",
+      "NO_SHOW",
+    ];
     for (const status of priority) {
       const found = myServices.find(
-        (service) => service.status?.toUpperCase() === status,
+        (service) =>
+          service.status?.toUpperCase() === status &&
+          service.id !== dismissedTerminalServiceId,
       );
       if (found) return found;
     }
     return null;
-  }, [myServices]);
+  }, [myServices, dismissedTerminalServiceId]);
 
   const {
     operationalPhase,
@@ -1253,6 +1358,12 @@ export default function TransportistaPanel() {
 
   const HomeView = () => {
     const activeClosePin = activeService ? getUsableClosePin(activeService) : null;
+    const handleReturnToIdle = () => {
+      if (activeService?.id) {
+        setDismissedTerminalServiceId(activeService.id);
+      }
+      setExpandedPanel("NOW");
+    };
 
     return (
       <div className="space-y-6">
@@ -1275,6 +1386,13 @@ export default function TransportistaPanel() {
               />
             ) : isInProgress && activeService ? (
               <InProgressServiceView activeService={activeService} closePin={activeClosePin} />
+            ) : isCompleted && activeService ? (
+              <CompletedServiceView
+                activeService={activeService}
+                onNewService={handleReturnToIdle}
+              />
+            ) : isCancelled && activeService ? (
+              <CancelledServiceView activeService={activeService} onRetry={handleReturnToIdle} />
             ) : activeService ? (
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-3">
