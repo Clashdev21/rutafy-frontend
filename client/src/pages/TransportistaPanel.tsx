@@ -636,6 +636,144 @@ function SearchingServiceView({
   );
 }
 
+function AssignedServiceView({
+  activeService,
+  closePin,
+  onCancel,
+  canCancel,
+  isCancelling,
+}: {
+  activeService: LocalServiceItem;
+  closePin: string | null;
+  onCancel: () => void | Promise<void>;
+  canCancel: boolean;
+  isCancelling: boolean;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/85">
+          Mensajero asignado
+        </p>
+        <h2 className="text-lg font-bold leading-snug text-white sm:text-xl">
+          Tu solicitud fue aceptada
+        </h2>
+        <p className="text-sm leading-relaxed text-white/90">
+          El mensajero se dirige al punto de recogida.
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-white/15 bg-white/10 p-4 text-sm text-white/95 backdrop-blur-sm space-y-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">
+            Recoger en
+          </p>
+          <p className="mt-0.5 font-medium text-white">{activeService.origin}</p>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">
+            Entregar en
+          </p>
+          <p className="mt-0.5 font-medium text-white">{activeService.destination}</p>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">
+            Tipo de servicio
+          </p>
+          <p className="mt-0.5 font-medium text-white">
+            {getServiceTypeLabel(activeService.serviceType)}
+          </p>
+        </div>
+      </div>
+
+      {closePin ? (
+        <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 space-y-2">
+          <p className="text-sm font-semibold text-white">PIN de cierre</p>
+          <p
+            className="text-center font-mono text-2xl font-bold tracking-[0.2em] text-white sm:text-3xl"
+            translate="no"
+          >
+            {closePin}
+          </p>
+          <p className="text-xs leading-relaxed text-white/85">
+            Entrégalo al mensajero solo cuando el servicio haya sido completado.
+          </p>
+        </div>
+      ) : null}
+
+      {canCancel ? (
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-full rounded-xl border border-white/25 bg-white/15 text-white hover:bg-white/25"
+          disabled={isCancelling}
+          onClick={() => void onCancel()}
+        >
+          {isCancelling ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" aria-hidden />
+              Cancelando solicitud…
+            </>
+          ) : (
+            "Cancelar solicitud"
+          )}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function InProgressServiceView({
+  activeService,
+  closePin,
+}: {
+  activeService: LocalServiceItem;
+  closePin: string | null;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/85">
+          Servicio en curso
+        </p>
+        <h2 className="text-lg font-bold leading-snug text-white sm:text-xl">
+          El mensajero está realizando la entrega
+        </h2>
+      </div>
+
+      <div className="rounded-2xl border border-white/15 bg-white/10 p-4 text-sm text-white/95 backdrop-blur-sm space-y-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">
+            Recoger en
+          </p>
+          <p className="mt-0.5 font-medium text-white">{activeService.origin}</p>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">
+            Entregar en
+          </p>
+          <p className="mt-0.5 font-medium text-white">{activeService.destination}</p>
+        </div>
+      </div>
+
+      {closePin ? (
+        <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 space-y-2">
+          <p className="text-sm font-semibold text-white">PIN de cierre</p>
+          <p
+            className="text-center font-mono text-3xl font-bold tracking-[0.2em] text-white"
+            translate="no"
+          >
+            {closePin}
+          </p>
+          <p className="text-xs leading-relaxed text-white/85">
+            Comparte el PIN solo cuando el servicio haya finalizado.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 const statusBorderColors: Record<string, string> = {
   REQUESTED: "border-l-yellow-500",
   OFFERED: "border-l-amber-500",
@@ -1113,8 +1251,11 @@ export default function TransportistaPanel() {
     );
   }
 
-  const HomeView = () => (
-    <div className="space-y-6">
+  const HomeView = () => {
+    const activeClosePin = activeService ? getUsableClosePin(activeService) : null;
+
+    return (
+      <div className="space-y-6">
         <Card className="border-0 shadow-sm bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] text-white overflow-hidden">
           <CardContent className="p-4 md:p-6">
             {isSearching && activeService ? (
@@ -1124,6 +1265,16 @@ export default function TransportistaPanel() {
                 isCancelling={cancellingServiceId === activeService.id}
                 canCancel={isTransportistaCancelableServiceStatus(activeService.status)}
               />
+            ) : isAssigned && activeService ? (
+              <AssignedServiceView
+                activeService={activeService}
+                closePin={activeClosePin}
+                onCancel={() => void handleCancelServiceAsTransportista(activeService)}
+                canCancel={isTransportistaCancelableServiceStatus(activeService.status)}
+                isCancelling={cancellingServiceId === activeService.id}
+              />
+            ) : isInProgress && activeService ? (
+              <InProgressServiceView activeService={activeService} closePin={activeClosePin} />
             ) : activeService ? (
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-3">
@@ -1449,7 +1600,8 @@ export default function TransportistaPanel() {
           </Card>
         </div>
       </div>
-  );
+    );
+  };
 
   const ActivityView = () => (
     <div className="space-y-6">
