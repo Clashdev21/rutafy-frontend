@@ -53,7 +53,7 @@ import {
   Ban,
 } from "lucide-react";
 import axios from "axios";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 type ServiceMode = "EMPRESA" | "LIBRE";
@@ -488,6 +488,32 @@ function normalizeComparableText(value: string): string {
     .toLowerCase();
 }
 
+function postTransportistaDebugLog(
+  hypothesisId: string,
+  location: string,
+  message: string,
+  data: Record<string, unknown>,
+) {
+  // #region agent log
+  fetch("http://127.0.0.1:7395/ingest/ab1c0a5e-cbfc-4d3e-a959-ae19e797e481", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Debug-Session-Id": "bbfa1f",
+    },
+    body: JSON.stringify({
+      sessionId: "bbfa1f",
+      runId: "post-fix-1",
+      hypothesisId,
+      location,
+      message,
+      data,
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+}
+
 function getNodeDisplayLabel(node: NodeItem): string {
   const extras = [node.zone, node.category].filter(Boolean).join(" · ");
   return extras ? `${node.name} (${extras})` : node.name;
@@ -876,6 +902,515 @@ const statusBorderColors: Record<string, string> = {
   NO_SHOW: "border-l-zinc-400",
 };
 
+type TransportistaHomeViewProps = {
+  activeService: LocalServiceItem | null;
+  isIdle: boolean;
+  isSearching: boolean;
+  isAssigned: boolean;
+  isInProgress: boolean;
+  isCompleted: boolean;
+  isCancelled: boolean;
+  expandedPanel: ExpandedPanel;
+  setExpandedPanel: (value: ExpandedPanel) => void;
+  setDismissedTerminalServiceId: (value: string | null) => void;
+  onCancelService: (service: LocalServiceItem) => void | Promise<void>;
+  cancellingServiceId: string | null;
+  serviceMode: ServiceMode;
+  setServiceMode: (value: ServiceMode) => void;
+  serviceType: UiServiceType;
+  setServiceType: (value: UiServiceType) => void;
+  companyId: string;
+  setCompanyId: (value: string) => void;
+  companies: Array<{ id: number; name: string }>;
+  originMode: LocationMode;
+  setOriginMode: (value: LocationMode) => void;
+  destinationMode: LocationMode;
+  setDestinationMode: (value: LocationMode) => void;
+  originNodeId: string;
+  setOriginNodeId: (value: string) => void;
+  destinationNodeId: string;
+  setDestinationNodeId: (value: string) => void;
+  origin: string;
+  setOrigin: (value: string) => void;
+  destination: string;
+  setDestination: (value: string) => void;
+  nodeReference: string;
+  setNodeReference: (value: string) => void;
+  originNodeSearch: string;
+  setOriginNodeSearch: (value: string) => void;
+  destinationNodeSearch: string;
+  setDestinationNodeSearch: (value: string) => void;
+  activeNodes: NodeItem[];
+  originSelectedNode: NodeItem | null;
+  destinationSelectedNode: NodeItem | null;
+  isLoadingNodes: boolean;
+  scheduledAt: string;
+  setScheduledAt: (value: string) => void;
+  onCreateServiceNow: () => void | Promise<void>;
+  onCreateServiceScheduled: () => void | Promise<void>;
+  isCreatingNow: boolean;
+  isCreatingScheduled: boolean;
+  manualAddressModal: "origin" | "destination" | null;
+  manualAddressDraft: string;
+  setManualAddressDraft: (value: string) => void;
+  openManualAddressModal: (which: "origin" | "destination") => void;
+  closeManualAddressModal: () => void;
+  confirmManualAddressModal: () => void;
+};
+
+function TransportistaHomeView(props: TransportistaHomeViewProps) {
+  const {
+    activeService,
+    isIdle,
+    isSearching,
+    isAssigned,
+    isInProgress,
+    isCompleted,
+    isCancelled,
+    expandedPanel,
+    setExpandedPanel,
+    setDismissedTerminalServiceId,
+    onCancelService,
+    cancellingServiceId,
+    serviceMode,
+    setServiceMode,
+    serviceType,
+    setServiceType,
+    companyId,
+    setCompanyId,
+    companies,
+    originMode,
+    setOriginMode,
+    destinationMode,
+    setDestinationMode,
+    originNodeId,
+    setOriginNodeId,
+    destinationNodeId,
+    setDestinationNodeId,
+    origin,
+    setOrigin,
+    destination,
+    setDestination,
+    nodeReference,
+    setNodeReference,
+    originNodeSearch,
+    setOriginNodeSearch,
+    destinationNodeSearch,
+    setDestinationNodeSearch,
+    activeNodes,
+    originSelectedNode,
+    destinationSelectedNode,
+    isLoadingNodes,
+    scheduledAt,
+    setScheduledAt,
+    onCreateServiceNow,
+    onCreateServiceScheduled,
+    isCreatingNow,
+    isCreatingScheduled,
+    manualAddressModal,
+    manualAddressDraft,
+    setManualAddressDraft,
+    openManualAddressModal,
+    closeManualAddressModal,
+    confirmManualAddressModal,
+  } = props;
+
+  useEffect(() => {
+    // #region agent log
+    postTransportistaDebugLog("H5", "TransportistaHomeView:mount", "home-view-mounted", {
+      activeServiceId: activeService?.id ?? null,
+      runId: "post-fix-hoist-home",
+    });
+    // #endregion
+    return () => {
+      // #region agent log
+      postTransportistaDebugLog("H5", "TransportistaHomeView:mount", "home-view-unmounted", {
+        runId: "post-fix-hoist-home",
+      });
+      // #endregion
+    };
+  }, []);
+
+  const activeClosePin = activeService ? getUsableClosePin(activeService) : null;
+  const isOperationalIdle = isIdle || !activeService;
+  const isCreatingServiceDraft = expandedPanel !== null;
+  const handleReturnToIdle = () => {
+    if (activeService?.id) {
+      setDismissedTerminalServiceId(activeService.id);
+    }
+    closeManualAddressModal();
+    setExpandedPanel("NOW");
+  };
+
+  return (
+    <div className="space-y-5">
+      <Card className="border-0 shadow-sm bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] text-white overflow-hidden">
+        <CardContent className="p-4">
+          {isSearching && activeService ? (
+            <SearchingServiceView
+              activeService={activeService}
+              onCancel={() => void onCancelService(activeService)}
+              isCancelling={cancellingServiceId === activeService.id}
+              canCancel={isTransportistaCancelableServiceStatus(activeService.status)}
+            />
+          ) : isAssigned && activeService ? (
+            <AssignedServiceView
+              activeService={activeService}
+              closePin={activeClosePin}
+              onCancel={() => void onCancelService(activeService)}
+              canCancel={isTransportistaCancelableServiceStatus(activeService.status)}
+              isCancelling={cancellingServiceId === activeService.id}
+            />
+          ) : isInProgress && activeService ? (
+            <InProgressServiceView activeService={activeService} closePin={activeClosePin} />
+          ) : isCompleted && activeService ? (
+            <CompletedServiceView activeService={activeService} onNewService={handleReturnToIdle} />
+          ) : isCancelled && activeService ? (
+            <CancelledServiceView activeService={activeService} onRetry={handleReturnToIdle} />
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/85">
+                Listo para operar
+              </p>
+              <h2 className="text-lg font-bold leading-snug text-white sm:text-xl">
+                Sin servicio activo
+              </h2>
+              <p className="text-sm leading-relaxed text-white/90">
+                Solicita un servicio para comenzar.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {isOperationalIdle ? (
+        <Button
+          type="button"
+          onClick={() => {
+            closeManualAddressModal();
+            setExpandedPanel("NOW");
+          }}
+          className="w-full rounded-xl bg-[#2A9D8F] hover:bg-[#238b7e] h-12"
+        >
+          Solicitar servicio
+        </Button>
+      ) : null}
+
+      {isCreatingServiceDraft ? (
+        <Card className="border-0 shadow-sm overflow-hidden">
+          <CardHeader className="space-y-4 p-5 pb-0">
+            <CardTitle className="text-lg font-semibold text-slate-900">Nuevo servicio</CardTitle>
+            <div
+              className="flex rounded-xl bg-slate-100/90 p-1 gap-1 transition-colors duration-150"
+              role="tablist"
+              aria-label="Modo de servicio"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={expandedPanel === "NOW"}
+                onClick={() => {
+                  closeManualAddressModal();
+                  setExpandedPanel("NOW");
+                }}
+                className={[
+                  "flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors duration-150",
+                  expandedPanel === "NOW"
+                    ? "bg-[#2A9D8F] text-white shadow-sm"
+                    : "bg-transparent text-slate-500 hover:bg-slate-200/60",
+                ].join(" ")}
+              >
+                Ahora
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={expandedPanel === "SCHEDULED"}
+                onClick={() => {
+                  closeManualAddressModal();
+                  setExpandedPanel("SCHEDULED");
+                }}
+                className={[
+                  "flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors duration-150",
+                  expandedPanel === "SCHEDULED"
+                    ? "bg-[#2A9D8F] text-white shadow-sm"
+                    : "bg-transparent text-slate-500 hover:bg-slate-200/60",
+                ].join(" ")}
+              >
+                Programado
+              </button>
+            </div>
+          </CardHeader>
+
+          {expandedPanel === "NOW" && (
+            <CardContent className="space-y-5 p-5 pt-4 transition-opacity duration-150">
+              {renderSharedForm({
+                serviceMode,
+                setServiceMode,
+                serviceType,
+                setServiceType,
+                companyId,
+                setCompanyId,
+                companies,
+                originMode,
+                setOriginMode,
+                destinationMode,
+                setDestinationMode,
+                originNodeId,
+                setOriginNodeId,
+                destinationNodeId,
+                setDestinationNodeId,
+                origin,
+                setOrigin,
+                destination,
+                setDestination,
+                nodeReference,
+                setNodeReference,
+                originNodeSearch,
+                setOriginNodeSearch,
+                destinationNodeSearch,
+                setDestinationNodeSearch,
+                activeNodes,
+                originSelectedNode,
+                destinationSelectedNode,
+                isLoadingNodes,
+                manualAddressModal,
+                manualAddressDraft,
+                setManualAddressDraft,
+                openManualAddressModal,
+                closeManualAddressModal,
+                confirmManualAddressModal,
+              })}
+
+              <div className="flex justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    closeManualAddressModal();
+                    setExpandedPanel(null);
+                  }}
+                  className="rounded-xl"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={() => void onCreateServiceNow()}
+                  disabled={isCreatingNow}
+                  className="rounded-xl bg-[#2A9D8F] hover:bg-[#238b7e] active:scale-[0.98] transition-all duration-150 shadow-sm"
+                >
+                  {isCreatingNow ? "Creando..." : "Crear servicio ahora"}
+                </Button>
+              </div>
+            </CardContent>
+          )}
+
+          {expandedPanel === "SCHEDULED" && (
+            <CardContent className="space-y-5 p-5 pt-4 transition-opacity duration-150">
+              <div className="space-y-2">
+                <Label>Fecha y hora programada</Label>
+                <Input
+                  type="datetime-local"
+                  value={scheduledAt}
+                  min={toInputDateTimeLocal(new Date().toISOString())}
+                  onChange={(e) => setScheduledAt(e.target.value)}
+                  className="rounded-xl"
+                />
+              </div>
+
+              {renderSharedForm({
+                serviceMode,
+                setServiceMode,
+                serviceType,
+                setServiceType,
+                companyId,
+                setCompanyId,
+                companies,
+                originMode,
+                setOriginMode,
+                destinationMode,
+                setDestinationMode,
+                originNodeId,
+                setOriginNodeId,
+                destinationNodeId,
+                setDestinationNodeId,
+                origin,
+                setOrigin,
+                destination,
+                setDestination,
+                nodeReference,
+                setNodeReference,
+                originNodeSearch,
+                setOriginNodeSearch,
+                destinationNodeSearch,
+                setDestinationNodeSearch,
+                activeNodes,
+                originSelectedNode,
+                destinationSelectedNode,
+                isLoadingNodes,
+                manualAddressModal,
+                manualAddressDraft,
+                setManualAddressDraft,
+                openManualAddressModal,
+                closeManualAddressModal,
+                confirmManualAddressModal,
+              })}
+
+              <div className="flex justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    closeManualAddressModal();
+                    setExpandedPanel(null);
+                  }}
+                  className="rounded-xl"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={() => void onCreateServiceScheduled()}
+                  disabled={isCreatingScheduled}
+                  className="rounded-xl bg-[#2A9D8F] hover:bg-[#238b7e] active:scale-[0.98] transition-all duration-150 shadow-sm"
+                >
+                  {isCreatingScheduled ? "Programando..." : "Programar servicio"}
+                </Button>
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      ) : null}
+    </div>
+  );
+}
+
+type TransportistaActivityViewProps = {
+  activityServices: LocalServiceItem[];
+  isLoadingHistory: boolean;
+  loadTransportistaHistory: () => Promise<void>;
+  setSelectedHistoryService: (service: LocalServiceItem) => void;
+};
+
+function TransportistaActivityView({
+  activityServices,
+  isLoadingHistory,
+  loadTransportistaHistory,
+  setSelectedHistoryService,
+}: TransportistaActivityViewProps) {
+  return (
+    <div className="space-y-4">
+      <Card className="border border-slate-200/80 bg-white shadow-sm overflow-hidden rounded-2xl">
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900">Historial</h2>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              void loadTransportistaHistory();
+            }}
+            disabled={isLoadingHistory}
+            className="h-8 rounded-lg text-slate-600"
+          >
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${isLoadingHistory ? "animate-spin" : ""}`} />
+            {isLoadingHistory ? "Actualizando..." : "Recargar"}
+          </Button>
+        </div>
+
+        <div className="px-3 py-3">
+          {activityServices.length === 0 ? (
+            <div className="text-center py-8 text-sm text-slate-400">
+              No tienes servicios registrados todavía.
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {activityServices.map((service) => (
+                <li key={service.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedHistoryService(service)}
+                    className="w-full text-left rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-3 transition-colors hover:bg-slate-100/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2A9D8F]/40 focus-visible:ring-offset-1"
+                  >
+                    <p className="text-sm text-slate-900 font-medium leading-snug">
+                      {service.origin} <span className="text-slate-400 mx-1">→</span> {service.destination}
+                    </p>
+                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`px-2 py-0.5 text-[11px] rounded-full font-medium ${
+                          statusColors[service.status] || "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {statusLabels[service.status] || service.status}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {formatDateTime(service.createdAt)}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+type TransportistaAccountViewProps = {
+  userName: string | null | undefined;
+  userEmail: string | null | undefined;
+  onLogout: () => void | Promise<void>;
+};
+
+function TransportistaAccountView({ userName, userEmail, onLogout }: TransportistaAccountViewProps) {
+  return (
+    <div className="space-y-6">
+      <Card className="border-0 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <User className="w-5 h-5" />
+            Mi Perfil
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            <div className="flex justify-between py-2 border-b">
+              <span className="text-gray-500">Nombre</span>
+              <span className="font-medium">{userName || "-"}</span>
+            </div>
+
+            <div className="flex justify-between py-2 border-b">
+              <span className="text-gray-500">Email</span>
+              <span className="font-medium">{userEmail || "-"}</span>
+            </div>
+
+            <div className="flex justify-between py-2 border-b">
+              <span className="text-gray-500">Rol</span>
+              <span className="px-2 py-1 bg-[#2A9D8F]/10 text-[#2A9D8F] rounded-full text-sm font-medium">
+                Transportista
+              </span>
+            </div>
+
+            <div className="flex justify-between py-2">
+              <span className="text-gray-500">Estado</span>
+              <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                Activo
+              </span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Button
+        variant="outline"
+        className="w-full rounded-xl border-slate-200 h-12 text-slate-700"
+        onClick={() => void onLogout()}
+      >
+        <LogOut className="w-4 h-4 mr-2" />
+        Cerrar sesión
+      </Button>
+    </div>
+  );
+}
+
 export default function TransportistaPanel() {
   const { user, logout, loading } = useAuth();
   const [, setLocation] = useLocation();
@@ -901,8 +1436,8 @@ export default function TransportistaPanel() {
   const [serviceType, setServiceType] = useState<UiServiceType>("DOCS");
   const [companyId, setCompanyId] = useState("");
 
-  const [originMode, setOriginMode] = useState<LocationMode>("FREE");
-  const [destinationMode, setDestinationMode] = useState<LocationMode>("FREE");
+  const [originMode, setOriginMode] = useState<LocationMode>("NODE");
+  const [destinationMode, setDestinationMode] = useState<LocationMode>("NODE");
 
   const [originNodeId, setOriginNodeId] = useState("");
   const [destinationNodeId, setDestinationNodeId] = useState("");
@@ -911,6 +1446,12 @@ export default function TransportistaPanel() {
   const [destination, setDestination] = useState("");
   const [originNodeSearch, setOriginNodeSearch] = useState("");
   const [destinationNodeSearch, setDestinationNodeSearch] = useState("");
+  const [nodeReference, setNodeReference] = useState("");
+
+  const [manualAddressModal, setManualAddressModal] = useState<null | "origin" | "destination">(
+    null,
+  );
+  const [manualAddressDraft, setManualAddressDraft] = useState("");
 
   const [scheduledAt, setScheduledAt] = useState("");
 
@@ -985,6 +1526,41 @@ export default function TransportistaPanel() {
     console.debug("[transportista-operational-phase]", operationalPhase);
   }, [operationalPhase]);
 
+  useEffect(() => {
+    // #region agent log
+    postTransportistaDebugLog(
+      "H1_H3",
+      "TransportistaPanel.tsx:state-visibility",
+      "operational-structure-change",
+      {
+        activeTab,
+        expandedPanel,
+        operationalPhase,
+        activeServiceId: activeService?.id ?? null,
+        activeServiceStatus: activeService?.status ?? null,
+        isIdle,
+        isSearching,
+        isAssigned,
+        isInProgress,
+        isCompleted,
+        isCancelled,
+      },
+    );
+    // #endregion
+  }, [
+    activeTab,
+    expandedPanel,
+    operationalPhase,
+    activeService?.id,
+    activeService?.status,
+    isIdle,
+    isSearching,
+    isAssigned,
+    isInProgress,
+    isCompleted,
+    isCancelled,
+  ]);
+
   const activityServices = useMemo(() => myServices.slice(0, 30), [myServices]);
 
   const loadNodes = async () => {
@@ -1030,6 +1606,20 @@ export default function TransportistaPanel() {
       const rawServices = data.services ?? data.data ?? [];
 
       const normalized = rawServices.map(normalizeBackendServiceToLocal);
+      // #region agent log
+      postTransportistaDebugLog(
+        "H4",
+        "TransportistaPanel.tsx:loadTransportistaHistory",
+        "history-refresh-applied",
+        {
+          rawCount: rawServices.length,
+          normalizedCount: normalized.length,
+          topStatuses: normalized.slice(0, 5).map((s) => s.status),
+          expandedPanel,
+          activeTab,
+        },
+      );
+      // #endregion
       setMyServices(normalized);
     } catch (error: unknown) {
       const message = axios.isAxiosError(error)
@@ -1160,17 +1750,43 @@ export default function TransportistaPanel() {
     setLocation("/");
   };
 
+  const openManualAddressModal = useCallback((which: "origin" | "destination") => {
+    setManualAddressDraft(which === "origin" ? origin : destination);
+    setManualAddressModal(which);
+  }, [origin, destination]);
+
+  const closeManualAddressModal = useCallback(() => {
+    setManualAddressModal(null);
+  }, []);
+
+  const confirmManualAddressModal = useCallback(() => {
+    const t = manualAddressDraft.trim();
+    if (!t) {
+      toast.error("Escribe una dirección.");
+      return;
+    }
+    if (manualAddressModal === "origin") {
+      setOrigin(t);
+    } else if (manualAddressModal === "destination") {
+      setDestination(t);
+    }
+    setManualAddressModal(null);
+  }, [manualAddressDraft, manualAddressModal]);
+
   const resetForm = () => {
     setServiceMode("LIBRE");
     setServiceType("DOCS");
     setCompanyId("");
-    setOriginMode("FREE");
-    setDestinationMode("FREE");
+    setOriginMode("NODE");
+    setDestinationMode("NODE");
     setOriginNodeId("");
     setDestinationNodeId("");
     setOrigin("");
     setDestination("");
+    setNodeReference("");
     setScheduledAt("");
+    setManualAddressModal(null);
+    setManualAddressDraft("");
   };
 
   const copyToClipboard = async (
@@ -1191,6 +1807,7 @@ export default function TransportistaPanel() {
   };
 
   const buildPayload = (requestMode: RequestFlow) => {
+    const nodeReferenceTrimmed = nodeReference.trim();
     const finalOrigin =
       originMode === "NODE"
         ? originSelectedNode?.name?.trim() || ""
@@ -1255,6 +1872,16 @@ export default function TransportistaPanel() {
       destination_lng:
         destinationMode === "NODE"
           ? destinationSelectedNode?.lng
+          : undefined,
+      operational_instructions:
+        nodeReferenceTrimmed !== ""
+          ? `Referencia dentro del nodo: ${nodeReferenceTrimmed}`
+          : undefined,
+      meta:
+        nodeReferenceTrimmed !== ""
+          ? {
+              node_reference: nodeReferenceTrimmed,
+            }
           : undefined,
     };
   };
@@ -1344,334 +1971,6 @@ export default function TransportistaPanel() {
     );
   }
 
-  const HomeView = () => {
-    const activeClosePin = activeService ? getUsableClosePin(activeService) : null;
-    const isOperationalIdle = isIdle || !activeService;
-    const handleReturnToIdle = () => {
-      if (activeService?.id) {
-        setDismissedTerminalServiceId(activeService.id);
-      }
-      setExpandedPanel("NOW");
-    };
-
-    return (
-      <div className="space-y-5">
-        <Card className="border-0 shadow-sm bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] text-white overflow-hidden">
-          <CardContent className="p-4">
-            {isSearching && activeService ? (
-              <SearchingServiceView
-                activeService={activeService}
-                onCancel={() => void handleCancelServiceAsTransportista(activeService)}
-                isCancelling={cancellingServiceId === activeService.id}
-                canCancel={isTransportistaCancelableServiceStatus(activeService.status)}
-              />
-            ) : isAssigned && activeService ? (
-              <AssignedServiceView
-                activeService={activeService}
-                closePin={activeClosePin}
-                onCancel={() => void handleCancelServiceAsTransportista(activeService)}
-                canCancel={isTransportistaCancelableServiceStatus(activeService.status)}
-                isCancelling={cancellingServiceId === activeService.id}
-              />
-            ) : isInProgress && activeService ? (
-              <InProgressServiceView activeService={activeService} closePin={activeClosePin} />
-            ) : isCompleted && activeService ? (
-              <CompletedServiceView activeService={activeService} onNewService={handleReturnToIdle} />
-            ) : isCancelled && activeService ? (
-              <CancelledServiceView activeService={activeService} onRetry={handleReturnToIdle} />
-            ) : (
-              <div className="space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/85">
-                  Listo para operar
-                </p>
-                <h2 className="text-lg font-bold leading-snug text-white sm:text-xl">
-                  Sin servicio activo
-                </h2>
-                <p className="text-sm leading-relaxed text-white/90">
-                  Solicita un servicio para comenzar.
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {isOperationalIdle ? (
-          <Button
-            type="button"
-            onClick={() => setExpandedPanel("NOW")}
-            className="w-full rounded-xl bg-[#2A9D8F] hover:bg-[#238b7e] h-12"
-          >
-            Solicitar servicio
-          </Button>
-        ) : null}
-
-        {isOperationalIdle && expandedPanel !== null ? (
-          <Card className="border-0 shadow-sm overflow-hidden">
-            <CardHeader className="space-y-4 p-5 pb-0">
-              <CardTitle className="text-lg font-semibold text-slate-900">
-                Nuevo servicio
-              </CardTitle>
-              <div
-                className="flex rounded-xl bg-slate-100/90 p-1 gap-1 transition-colors duration-150"
-                role="tablist"
-                aria-label="Modo de servicio"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={expandedPanel === "NOW"}
-                  onClick={() => setExpandedPanel("NOW")}
-                  className={[
-                    "flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors duration-150",
-                    expandedPanel === "NOW"
-                      ? "bg-[#2A9D8F] text-white shadow-sm"
-                      : "bg-transparent text-slate-500 hover:bg-slate-200/60",
-                  ].join(" ")}
-                >
-                  Ahora
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={expandedPanel === "SCHEDULED"}
-                  onClick={() => setExpandedPanel("SCHEDULED")}
-                  className={[
-                    "flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors duration-150",
-                    expandedPanel === "SCHEDULED"
-                      ? "bg-[#2A9D8F] text-white shadow-sm"
-                      : "bg-transparent text-slate-500 hover:bg-slate-200/60",
-                  ].join(" ")}
-                >
-                  Programado
-                </button>
-              </div>
-            </CardHeader>
-
-            {expandedPanel === "NOW" && (
-              <CardContent className="space-y-5 p-5 pt-4 transition-opacity duration-150">
-                {renderSharedForm({
-                  serviceMode,
-                  setServiceMode,
-                  serviceType,
-                  setServiceType,
-                  companyId,
-                  setCompanyId,
-                  companies,
-                  originMode,
-                  setOriginMode,
-                  destinationMode,
-                  setDestinationMode,
-                  originNodeId,
-                  setOriginNodeId,
-                  destinationNodeId,
-                  setDestinationNodeId,
-                  origin,
-                  setOrigin,
-                  destination,
-                  setDestination,
-                  originNodeSearch,
-                  setOriginNodeSearch,
-                  destinationNodeSearch,
-                  setDestinationNodeSearch,
-                  activeNodes,
-                  originSelectedNode,
-                  destinationSelectedNode,
-                  isLoadingNodes,
-                })}
-
-                <div className="flex justify-end gap-3">
-                  <Button
-                    variant="outline"
-                    onClick={() => setExpandedPanel(null)}
-                    className="rounded-xl"
-                  >
-                    Cancelar
-                  </Button>
-                  <Button
-                    onClick={() => handleCreateService("NOW")}
-                    disabled={isCreatingNow}
-                    className="rounded-xl bg-[#2A9D8F] hover:bg-[#238b7e] active:scale-[0.98] transition-all duration-150 shadow-sm"
-                  >
-                    {isCreatingNow ? "Creando..." : "Crear servicio ahora"}
-                  </Button>
-                </div>
-              </CardContent>
-            )}
-
-            {expandedPanel === "SCHEDULED" && (
-              <CardContent className="space-y-5 p-5 pt-4 transition-opacity duration-150">
-                <div className="space-y-2">
-                  <Label>Fecha y hora programada</Label>
-                  <Input
-                    type="datetime-local"
-                    value={scheduledAt}
-                    min={toInputDateTimeLocal(new Date().toISOString())}
-                    onChange={(e) => setScheduledAt(e.target.value)}
-                    className="rounded-xl"
-                  />
-                </div>
-
-                {renderSharedForm({
-                  serviceMode,
-                  setServiceMode,
-                  serviceType,
-                  setServiceType,
-                  companyId,
-                  setCompanyId,
-                  companies,
-                  originMode,
-                  setOriginMode,
-                  destinationMode,
-                  setDestinationMode,
-                  originNodeId,
-                  setOriginNodeId,
-                  destinationNodeId,
-                  setDestinationNodeId,
-                  origin,
-                  setOrigin,
-                  destination,
-                  setDestination,
-                  originNodeSearch,
-                  setOriginNodeSearch,
-                  destinationNodeSearch,
-                  setDestinationNodeSearch,
-                  activeNodes,
-                  originSelectedNode,
-                  destinationSelectedNode,
-                  isLoadingNodes,
-                })}
-
-                <div className="flex justify-end gap-3">
-                  <Button
-                    variant="outline"
-                    onClick={() => setExpandedPanel(null)}
-                    className="rounded-xl"
-                  >
-                    Cancelar
-                  </Button>
-                  <Button
-                    onClick={() => handleCreateService("SCHEDULED")}
-                    disabled={isCreatingScheduled}
-                    className="rounded-xl bg-[#2A9D8F] hover:bg-[#238b7e] active:scale-[0.98] transition-all duration-150 shadow-sm"
-                  >
-                    {isCreatingScheduled ? "Programando..." : "Programar servicio"}
-                  </Button>
-                </div>
-              </CardContent>
-            )}
-          </Card>
-        ) : null}
-      </div>
-    );
-  };
-
-  const ActivityView = () => (
-    <div className="space-y-4">
-      <Card className="border border-slate-200/80 bg-white shadow-sm overflow-hidden rounded-2xl">
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100">
-          <h2 className="text-sm font-semibold text-slate-900">Historial</h2>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              void loadTransportistaHistory();
-            }}
-            disabled={isLoadingHistory}
-            className="h-8 rounded-lg text-slate-600"
-          >
-            <RefreshCw className={`w-4 h-4 mr-1.5 ${isLoadingHistory ? "animate-spin" : ""}`} />
-            {isLoadingHistory ? "Actualizando..." : "Recargar"}
-          </Button>
-        </div>
-
-        <div className="px-3 py-3">
-          {activityServices.length === 0 ? (
-            <div className="text-center py-8 text-sm text-slate-400">
-              No tienes servicios registrados todavía.
-            </div>
-          ) : (
-            <ul className="space-y-2">
-              {activityServices.map((service) => (
-                <li key={service.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedHistoryService(service)}
-                    className="w-full text-left rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-3 transition-colors hover:bg-slate-100/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2A9D8F]/40 focus-visible:ring-offset-1"
-                  >
-                    <p className="text-sm text-slate-900 font-medium leading-snug">
-                      {service.origin} <span className="text-slate-400 mx-1">→</span> {service.destination}
-                    </p>
-                    <div className="mt-2 flex items-center gap-2 flex-wrap">
-                      <span
-                        className={`px-2 py-0.5 text-[11px] rounded-full font-medium ${
-                          statusColors[service.status] || "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {statusLabels[service.status] || service.status}
-                      </span>
-                      <span className="text-[11px] text-slate-500">
-                        {formatDateTime(service.createdAt)}
-                      </span>
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </Card>
-    </div>
-  );
-
-  const AccountView = () => (
-    <div className="space-y-6">
-        <Card className="border-0 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <User className="w-5 h-5" />
-              Mi Perfil
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex justify-between py-2 border-b">
-                <span className="text-gray-500">Nombre</span>
-                <span className="font-medium">{user?.name || "-"}</span>
-              </div>
-
-              <div className="flex justify-between py-2 border-b">
-                <span className="text-gray-500">Email</span>
-                <span className="font-medium">{user?.email || "-"}</span>
-              </div>
-
-              <div className="flex justify-between py-2 border-b">
-                <span className="text-gray-500">Rol</span>
-                <span className="px-2 py-1 bg-[#2A9D8F]/10 text-[#2A9D8F] rounded-full text-sm font-medium">
-                  Transportista
-                </span>
-              </div>
-
-              <div className="flex justify-between py-2">
-                <span className="text-gray-500">Estado</span>
-                <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
-                  Activo
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Button
-          variant="outline"
-          className="w-full rounded-xl border-slate-200 h-12 text-slate-700"
-          onClick={handleLogout}
-        >
-          <LogOut className="w-4 h-4 mr-2" />
-          Cerrar sesión
-        </Button>
-      </div>
-  );
-
   return (
     <div
       className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)]"
@@ -1719,9 +2018,78 @@ export default function TransportistaPanel() {
       </div>
 
       <div className="max-w-md mx-auto p-4 md:p-6 pb-28">
-        {activeTab === "home" && <HomeView />}
-        {activeTab === "activity" && <ActivityView />}
-        {activeTab === "account" && <AccountView />}
+        {activeTab === "home" && (
+          <TransportistaHomeView
+            activeService={activeService}
+            isIdle={isIdle}
+            isSearching={isSearching}
+            isAssigned={isAssigned}
+            isInProgress={isInProgress}
+            isCompleted={isCompleted}
+            isCancelled={isCancelled}
+            expandedPanel={expandedPanel}
+            setExpandedPanel={setExpandedPanel}
+            setDismissedTerminalServiceId={setDismissedTerminalServiceId}
+            onCancelService={handleCancelServiceAsTransportista}
+            cancellingServiceId={cancellingServiceId}
+            serviceMode={serviceMode}
+            setServiceMode={setServiceMode}
+            serviceType={serviceType}
+            setServiceType={setServiceType}
+            companyId={companyId}
+            setCompanyId={setCompanyId}
+            companies={companies}
+            originMode={originMode}
+            setOriginMode={setOriginMode}
+            destinationMode={destinationMode}
+            setDestinationMode={setDestinationMode}
+            originNodeId={originNodeId}
+            setOriginNodeId={setOriginNodeId}
+            destinationNodeId={destinationNodeId}
+            setDestinationNodeId={setDestinationNodeId}
+            origin={origin}
+            setOrigin={setOrigin}
+            destination={destination}
+            setDestination={setDestination}
+            nodeReference={nodeReference}
+            setNodeReference={setNodeReference}
+            originNodeSearch={originNodeSearch}
+            setOriginNodeSearch={setOriginNodeSearch}
+            destinationNodeSearch={destinationNodeSearch}
+            setDestinationNodeSearch={setDestinationNodeSearch}
+            activeNodes={activeNodes}
+            originSelectedNode={originSelectedNode}
+            destinationSelectedNode={destinationSelectedNode}
+            isLoadingNodes={isLoadingNodes}
+            scheduledAt={scheduledAt}
+            setScheduledAt={setScheduledAt}
+            onCreateServiceNow={() => handleCreateService("NOW")}
+            onCreateServiceScheduled={() => handleCreateService("SCHEDULED")}
+            isCreatingNow={isCreatingNow}
+            isCreatingScheduled={isCreatingScheduled}
+            manualAddressModal={manualAddressModal}
+            manualAddressDraft={manualAddressDraft}
+            setManualAddressDraft={setManualAddressDraft}
+            openManualAddressModal={openManualAddressModal}
+            closeManualAddressModal={closeManualAddressModal}
+            confirmManualAddressModal={confirmManualAddressModal}
+          />
+        )}
+        {activeTab === "activity" && (
+          <TransportistaActivityView
+            activityServices={activityServices}
+            isLoadingHistory={isLoadingHistory}
+            loadTransportistaHistory={loadTransportistaHistory}
+            setSelectedHistoryService={setSelectedHistoryService}
+          />
+        )}
+        {activeTab === "account" && (
+          <TransportistaAccountView
+            userName={user?.name}
+            userEmail={user?.email}
+            onLogout={handleLogout}
+          />
+        )}
       </div>
 
       <nav
@@ -2216,6 +2584,8 @@ function renderSharedForm({
   setOrigin,
   destination,
   setDestination,
+  nodeReference,
+  setNodeReference,
   originNodeSearch,
   setOriginNodeSearch,
   destinationNodeSearch,
@@ -2224,6 +2594,12 @@ function renderSharedForm({
   originSelectedNode,
   destinationSelectedNode,
   isLoadingNodes,
+  manualAddressModal,
+  manualAddressDraft,
+  setManualAddressDraft,
+  openManualAddressModal,
+  closeManualAddressModal,
+  confirmManualAddressModal,
 }: {
   serviceMode: ServiceMode;
   setServiceMode: (value: ServiceMode) => void;
@@ -2244,6 +2620,8 @@ function renderSharedForm({
   setOrigin: (value: string) => void;
   destination: string;
   setDestination: (value: string) => void;
+  nodeReference: string;
+  setNodeReference: (value: string) => void;
   originNodeSearch: string;
   setOriginNodeSearch: (value: string) => void;
   destinationNodeSearch: string;
@@ -2252,6 +2630,12 @@ function renderSharedForm({
   originSelectedNode: NodeItem | null;
   destinationSelectedNode: NodeItem | null;
   isLoadingNodes: boolean;
+  manualAddressModal: "origin" | "destination" | null;
+  manualAddressDraft: string;
+  setManualAddressDraft: (value: string) => void;
+  openManualAddressModal: (which: "origin" | "destination") => void;
+  closeManualAddressModal: () => void;
+  confirmManualAddressModal: () => void;
 }) {
   const scrollFieldIntoView = (target: EventTarget | null) => {
     if (typeof window === "undefined") return;
@@ -2262,12 +2646,59 @@ function renderSharedForm({
           ? (target as HTMLElement)
           : null;
     if (!element) return;
-    window.setTimeout(() => {
-      element.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 120);
+    // #region agent log
+    postTransportistaDebugLog(
+      "H2",
+      "TransportistaPanel.tsx:scrollFieldIntoView",
+      "scroll-into-view-scheduled",
+      {
+        tag: element.tagName,
+        id: element.id || null,
+        className: element.className || null,
+      },
+    );
+    // #endregion
+    const runScroll = () => {
+      const rect = element.getBoundingClientRect();
+      const viewportH = window.innerHeight || document.documentElement.clientHeight;
+      const isMostlyVisible =
+        rect.top >= 56 && rect.bottom <= Math.max(56, viewportH - 24);
+
+      // #region agent log
+      postTransportistaDebugLog(
+        "H2",
+        "TransportistaPanel.tsx:scrollFieldIntoView",
+        "scroll-into-view-evaluated",
+        {
+          top: Math.round(rect.top),
+          bottom: Math.round(rect.bottom),
+          viewportH,
+          isMostlyVisible,
+        },
+      );
+      // #endregion
+
+      if (isMostlyVisible) return;
+      element.scrollIntoView({ behavior: "auto", block: "center", inline: "nearest" });
+      // #region agent log
+      postTransportistaDebugLog(
+        "H2",
+        "TransportistaPanel.tsx:scrollFieldIntoView",
+        "scroll-into-view-executed",
+        { strategy: "raf-auto-center" },
+      );
+      // #endregion
+    };
+
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(runScroll);
+    } else {
+      runScroll();
+    }
   };
 
   return (
+    <>
     <div className="min-h-screen flex flex-col">
       <div className="flex-1 overflow-y-auto pb-32 space-y-5">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2366,6 +2797,7 @@ function renderSharedForm({
             <button
               type="button"
               onClick={() => {
+                closeManualAddressModal();
                 setOriginMode("NODE");
                 setOrigin("");
               }}
@@ -2382,20 +2814,27 @@ function renderSharedForm({
             <button
               type="button"
               onClick={() => {
+                closeManualAddressModal();
                 setOriginMode("FREE");
                 setOriginNodeId("");
               }}
               className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
                 originMode === "FREE"
-                  ? "bg-[#2A9D8F] text-white"
-                  : "bg-white text-slate-700 border border-slate-200"
+                  ? "bg-amber-100 text-amber-900 border border-amber-200"
+                  : "bg-white text-slate-500 border border-slate-200"
               }`}
             >
               <NavigationArrow className="h-4 w-4" />
-              <span>Dirección</span>
+              <span>Dirección (avanzado)</span>
             </button>
           </div>
         </div>
+
+        {originMode === "FREE" && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            La dirección manual está en ajuste. Te recomendamos usar un nodo logístico.
+          </div>
+        )}
 
         {originMode === "NODE" ? (
           <div className="space-y-2">
@@ -2416,8 +2855,20 @@ function renderSharedForm({
                     <Input
                       placeholder="Buscar por nombre, tipo o zona..."
                       value={originNodeSearch}
-                      onChange={(e) => setOriginNodeSearch(e.target.value)}
-                      onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
+                      onChange={(e) => {
+                        setOriginNodeSearch(e.target.value);
+                      }}
+                      onFocus={(e) => {
+                        // #region agent log
+                        postTransportistaDebugLog(
+                          "H2",
+                          "TransportistaPanel.tsx:originNodeSearch",
+                          "origin-node-search-focus",
+                          { valueLength: e.currentTarget.value.length },
+                        );
+                        // #endregion
+                        scrollFieldIntoView(e.currentTarget);
+                      }}
                       className="h-8 text-xs rounded-xl"
                     />
                   </div>
@@ -2473,15 +2924,26 @@ function renderSharedForm({
             )}
           </div>
         ) : (
-          <div className="space-y-2">
-            <Label>Recoger en</Label>
-            <Input
-              className="rounded-xl"
-              placeholder="Dirección o punto de recogida"
-              value={origin}
-              onChange={(e) => setOrigin(e.target.value)}
-              onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
-            />
+          <div className="space-y-3">
+            <Label>Dirección manual</Label>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full rounded-xl h-11 border-slate-200 text-slate-800"
+              onClick={() => openManualAddressModal("origin")}
+            >
+              Escribir dirección manual
+            </Button>
+            {origin.trim() !== "" ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                  Dirección guardada
+                </p>
+                <p className="text-sm text-slate-900 whitespace-pre-wrap break-words">{origin}</p>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">Aún no has definido una dirección de recogida.</p>
+            )}
           </div>
         )}
       </div>
@@ -2503,22 +2965,7 @@ function renderSharedForm({
             <button
               type="button"
               onClick={() => {
-                setDestinationMode("FREE");
-                setDestinationNodeId("");
-              }}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                destinationMode === "FREE" && !destination.startsWith("GPS:")
-                  ? "bg-[#2A9D8F] text-white"
-                  : "bg-white text-slate-700 border border-slate-200"
-              }`}
-            >
-              <NavigationArrow className="h-4 w-4" />
-              <span>Dirección</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
+                closeManualAddressModal();
                 setDestinationMode("NODE");
                 setDestination("");
               }}
@@ -2535,6 +2982,24 @@ function renderSharedForm({
             <button
               type="button"
               onClick={() => {
+                closeManualAddressModal();
+                setDestinationMode("FREE");
+                setDestinationNodeId("");
+              }}
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                destinationMode === "FREE" && !destination.startsWith("GPS:")
+                  ? "bg-amber-100 text-amber-900 border border-amber-200"
+                  : "bg-white text-slate-500 border border-slate-200"
+              }`}
+            >
+              <NavigationArrow className="h-4 w-4" />
+              <span>Dirección (avanzado)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                closeManualAddressModal();
                 setDestinationMode("FREE");
                 setDestinationNodeId("");
                 if ("geolocation" in navigator) {
@@ -2565,6 +3030,12 @@ function renderSharedForm({
           </div>
         </div>
 
+        {destinationMode === "FREE" && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            La dirección manual está en ajuste. Te recomendamos usar un nodo logístico.
+          </div>
+        )}
+
         {destinationMode === "NODE" ? (
           <div className="space-y-2">
             <Label>Nodo de destino</Label>
@@ -2587,8 +3058,20 @@ function renderSharedForm({
                     <Input
                       placeholder="Buscar por nombre, tipo o zona..."
                       value={destinationNodeSearch}
-                      onChange={(e) => setDestinationNodeSearch(e.target.value)}
-                      onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
+                      onChange={(e) => {
+                        setDestinationNodeSearch(e.target.value);
+                      }}
+                      onFocus={(e) => {
+                        // #region agent log
+                        postTransportistaDebugLog(
+                          "H2",
+                          "TransportistaPanel.tsx:destinationNodeSearch",
+                          "destination-node-search-focus",
+                          { valueLength: e.currentTarget.value.length },
+                        );
+                        // #endregion
+                        scrollFieldIntoView(e.currentTarget);
+                      }}
                       className="h-8 text-xs rounded-xl"
                     />
                   </div>
@@ -2644,19 +3127,91 @@ function renderSharedForm({
             )}
           </div>
         ) : (
-          <div className="space-y-2">
-            <Label>Entregar en</Label>
-            <Input
-              className="rounded-xl"
-              placeholder="Dirección o punto de entrega"
-              value={destination}
-              onChange={(e) => setDestination(e.target.value)}
-              onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
-            />
+          <div className="space-y-3">
+            <Label>Dirección manual</Label>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full rounded-xl h-11 border-slate-200 text-slate-800"
+              onClick={() => openManualAddressModal("destination")}
+            >
+              Escribir dirección manual
+            </Button>
+            {destination.trim() !== "" ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                  Dirección guardada
+                </p>
+                <p className="text-sm text-slate-900 whitespace-pre-wrap break-words">{destination}</p>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">Aún no has definido una dirección de entrega.</p>
+            )}
           </div>
         )}
       </div>
+
+      <div className="rounded-2xl border p-4 space-y-2">
+        <Label htmlFor="node-reference">Referencia dentro del nodo (opcional)</Label>
+        <Input
+          id="node-reference"
+          className="rounded-xl"
+          placeholder="Ej: Oficina 301, Patio 2, Ventanilla documentos, Camión placa ABC123"
+          value={nodeReference}
+          onChange={(e) => setNodeReference(e.target.value)}
+          maxLength={120}
+        />
+      </div>
       </div>
     </div>
+
+    <Dialog
+      open={manualAddressModal !== null}
+      onOpenChange={(open) => {
+        if (!open) closeManualAddressModal();
+      }}
+    >
+      <DialogContent className="max-w-md rounded-2xl max-h-[90dvh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
+            {manualAddressModal === "origin"
+              ? "Dirección de recogida"
+              : manualAddressModal === "destination"
+                ? "Dirección de entrega"
+                : "Dirección"}
+          </DialogTitle>
+          <DialogDescription className="text-left text-sm text-slate-600">
+            Escribe la dirección completa. Se usará al crear el servicio.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 py-1">
+          <Textarea
+            value={manualAddressDraft}
+            onChange={(e) => setManualAddressDraft(e.target.value)}
+            placeholder="Ej: Sociedad portuaria, bodega 3, ventanilla documentos"
+            className="min-h-[200px] rounded-xl text-base resize-y"
+            rows={8}
+          />
+        </div>
+        <DialogFooter className="flex-col gap-2 sm:flex-col">
+          <Button
+            type="button"
+            className="w-full rounded-xl bg-[#2A9D8F] hover:bg-[#238b7e]"
+            onClick={() => void confirmManualAddressModal()}
+          >
+            Usar esta dirección
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full rounded-xl"
+            onClick={closeManualAddressModal}
+          >
+            Cancelar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
