@@ -89,6 +89,13 @@ type LocalServiceItem = {
 
 type BackendCreateServiceResponse = Record<string, unknown>;
 
+type NodeItemMetadata = {
+  search_aliases?: string[];
+  aliases?: string[];
+  subnodes?: Array<{ label?: string; name?: string }>;
+  [key: string]: unknown;
+};
+
 type NodeItem = {
   node_id: string;
   code: string;
@@ -100,6 +107,7 @@ type NodeItem = {
   address_text: string | null;
   is_active: boolean;
   marketplace_enabled?: boolean;
+  metadata?: NodeItemMetadata;
 };
 
 type NodesListResponse = {
@@ -486,6 +494,249 @@ function normalizeComparableText(value: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
+}
+
+const RUTAFY_NODES_RECENT_LS_KEY = "rutafy.nodes.recent.v1";
+const MAX_RECENT_NODES = 10;
+const MAX_NODE_SUGGESTIONS = 12;
+
+function loadRecentNodeIdsFromStorage(): string[] {
+  try {
+    const raw = localStorage.getItem(RUTAFY_NODES_RECENT_LS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((x): x is string => typeof x === "string" && x.trim() !== "")
+      .slice(0, MAX_RECENT_NODES);
+  } catch {
+    return [];
+  }
+}
+
+function persistRecentNodeIds(ids: readonly string[]): void {
+  try {
+    localStorage.setItem(RUTAFY_NODES_RECENT_LS_KEY, JSON.stringify([...ids].slice(0, MAX_RECENT_NODES)));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function getRawSearchableAliasStrings(node: NodeItem): string[] {
+  const m = node.metadata;
+  if (!m || typeof m !== "object" || Array.isArray(m)) return [];
+  const out: string[] = [];
+  const pushArr = (arr: unknown) => {
+    if (!Array.isArray(arr)) return;
+    for (const x of arr) {
+      if (typeof x === "string" && x.trim() !== "") out.push(x);
+    }
+  };
+  pushArr(m.search_aliases);
+  pushArr(m.aliases);
+  const subs = m.subnodes;
+  if (Array.isArray(subs)) {
+    for (const s of subs) {
+      if (s && typeof s === "object" && !Array.isArray(s)) {
+        const o = s as { label?: unknown; name?: unknown };
+        if (typeof o.label === "string" && o.label.trim() !== "") out.push(o.label);
+        if (typeof o.name === "string" && o.name.trim() !== "") out.push(o.name);
+      }
+    }
+  }
+  return out;
+}
+
+/** Texto normalizado concatenado para coincidencia parcial general (prioridad más baja). */
+function buildNodeSearchHaystack(node: NodeItem): string {
+  const parts = [
+    node.name,
+    node.code,
+    node.category,
+    node.zone ?? "",
+    node.address_text ?? "",
+    ...getRawSearchableAliasStrings(node),
+  ];
+  return normalizeComparableText(parts.join(" "));
+}
+
+/**
+ * Ranking: mayor score = mejor.
+ * 5000 name prefix, 4000 code prefix, 3500 alias prefix, 3000 alias contains,
+ * 2000 zone/category/address, 1000 cualquier substring en haystack.
+ */
+function scoreNodeForQuery(node: NodeItem, q: string): number {
+  if (!q) return 0;
+  const name = normalizeComparableText(node.name);
+  const code = normalizeComparableText(node.code || "");
+  if (name.startsWith(q)) return 5000;
+  if (code.startsWith(q)) return 4000;
+  for (const raw of getRawSearchableAliasStrings(node)) {
+    const a = normalizeComparableText(raw);
+    if (!a) continue;
+    if (a.startsWith(q)) return 3500;
+  }
+  for (const raw of getRawSearchableAliasStrings(node)) {
+    const a = normalizeComparableText(raw);
+    if (a.includes(q)) return 3000;
+  }
+  const z = normalizeComparableText(node.zone || "");
+  const cat = normalizeComparableText(node.category || "");
+  const addr = normalizeComparableText(node.address_text || "");
+  if (z.includes(q) || cat.includes(q) || addr.includes(q)) return 2000;
+  if (buildNodeSearchHaystack(node).includes(q)) return 1000;
+  return 0;
+}
+
+function pickNodeSuggestions(
+  nodes: readonly NodeItem[],
+  queryRaw: string,
+  recentIds: readonly string[],
+  limit: number,
+): NodeItem[] {
+  const q = normalizeComparableText(queryRaw);
+  if (!q) {
+    const byId = new Map(nodes.map((n) => [n.node_id, n] as const));
+    const out: NodeItem[] = [];
+    const seen = new Set<string>();
+    for (const id of recentIds) {
+      const n = byId.get(id);
+      if (n && !seen.has(n.node_id)) {
+        out.push(n);
+        seen.add(n.node_id);
+      }
+    }
+    for (const n of [...nodes].sort((a, b) => a.name.localeCompare(b.name, "es"))) {
+      if (!seen.has(n.node_id)) {
+        out.push(n);
+        seen.add(n.node_id);
+      }
+      if (out.length >= limit) break;
+    }
+    return out.slice(0, limit);
+  }
+  const scored = nodes
+    .map((n) => ({ n, s: scoreNodeForQuery(n, q) }))
+    .filter((x) => x.s > 0)
+    .sort((a, b) => b.s - a.s || a.n.name.localeCompare(b.n.name, "es"));
+  return scored.slice(0, limit).map((x) => x.n);
+}
+
+type NodeQuickPickerProps = {
+  idPrefix: string;
+  label: string;
+  nodes: NodeItem[];
+  value: string;
+  onValueChange: (nodeId: string) => void;
+  recentNodeIds: readonly string[];
+  onRegisterRecent: (nodeId: string) => void;
+  disabled?: boolean;
+};
+
+function NodeQuickPicker({
+  idPrefix,
+  label,
+  nodes,
+  value,
+  onValueChange,
+  recentNodeIds,
+  onRegisterRecent,
+  disabled,
+}: NodeQuickPickerProps) {
+  const [query, setQuery] = useState("");
+
+  const suggestions = useMemo(
+    () => pickNodeSuggestions(nodes, query, recentNodeIds, MAX_NODE_SUGGESTIONS),
+    [nodes, query, recentNodeIds],
+  );
+
+  const selected = useMemo(
+    () => (value ? nodes.find((n) => n.node_id === value) ?? null : null),
+    [nodes, value],
+  );
+
+  const inputId = `${idPrefix}-search`;
+
+  return (
+    <div className="space-y-2">
+      {label ? <Label htmlFor={inputId}>{label}</Label> : null}
+      <Input
+        id={inputId}
+        type="search"
+        enterKeyHint="search"
+        autoComplete="off"
+        disabled={disabled}
+        className="rounded-xl h-11 text-base"
+        placeholder="Escribe 2 o 3 letras para buscar un nodo…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+
+      {selected ? (
+        <div className="rounded-xl border border-[#2A9D8F]/30 bg-[#2A9D8F]/5 p-3 text-sm text-slate-800">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-[#2A9D8F]/90 mb-1">
+            Nodo seleccionado
+          </p>
+          <p className="font-medium text-slate-900">{selected.name}</p>
+          <p className="text-xs text-slate-600 mt-0.5">
+            {(selected.zone || "Sin zona") + " · " + (selected.category || "").replace(/_/g, " ")}
+          </p>
+          {selected.code ? (
+            <p className="text-xs font-mono text-slate-600 mt-1">Código: {selected.code}</p>
+          ) : null}
+          {selected.address_text ? (
+            <p className="text-xs text-slate-600 mt-1">{selected.address_text}</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {nodes.length === 0 ? (
+        <p className="text-sm text-slate-500">
+          {disabled ? "Cargando nodos…" : "No hay nodos activos disponibles."}
+        </p>
+      ) : (
+        <ul
+          className="space-y-2 max-h-[min(55vh,380px)] overflow-y-auto pr-0.5 -mr-0.5"
+          aria-label="Sugerencias de nodos"
+        >
+          {suggestions.map((node) => {
+            const zoneText = node.zone || "Sin zona";
+            const categoryText = (node.category || "").replace(/_/g, " ");
+            const isSelected = node.node_id === value;
+            return (
+              <li key={node.node_id}>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    onRegisterRecent(node.node_id);
+                    onValueChange(node.node_id);
+                    setQuery("");
+                  }}
+                  className={[
+                    "w-full text-left rounded-xl border px-3 py-3 transition-colors",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2A9D8F]/40 focus-visible:ring-offset-1",
+                    isSelected
+                      ? "border-[#2A9D8F] bg-[#2A9D8F]/10 ring-1 ring-[#2A9D8F]/25"
+                      : "border-slate-200 bg-white hover:bg-slate-50 active:bg-slate-100/80",
+                    disabled ? "opacity-50 pointer-events-none" : "",
+                  ].join(" ")}
+                >
+                  <p className="text-sm font-semibold text-slate-900 leading-snug">{node.name}</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {zoneText} · {categoryText}
+                  </p>
+                  {node.code ? (
+                    <p className="text-xs font-mono text-slate-600 mt-1">Código: {node.code}</p>
+                  ) : null}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function postTransportistaDebugLog(
@@ -936,14 +1187,10 @@ type TransportistaHomeViewProps = {
   setDestination: (value: string) => void;
   nodeReference: string;
   setNodeReference: (value: string) => void;
-  originNodeSearch: string;
-  setOriginNodeSearch: (value: string) => void;
-  destinationNodeSearch: string;
-  setDestinationNodeSearch: (value: string) => void;
   activeNodes: NodeItem[];
-  originSelectedNode: NodeItem | null;
-  destinationSelectedNode: NodeItem | null;
   isLoadingNodes: boolean;
+  recentNodeIds: readonly string[];
+  onRegisterRecentNode: (nodeId: string) => void;
   scheduledAt: string;
   setScheduledAt: (value: string) => void;
   onCreateServiceNow: () => void | Promise<void>;
@@ -993,13 +1240,9 @@ function TransportistaHomeView(props: TransportistaHomeViewProps) {
     setDestination,
     nodeReference,
     setNodeReference,
-    originNodeSearch,
-    setOriginNodeSearch,
-    destinationNodeSearch,
-    setDestinationNodeSearch,
     activeNodes,
-    originSelectedNode,
-    destinationSelectedNode,
+    recentNodeIds,
+    onRegisterRecentNode,
     isLoadingNodes,
     scheduledAt,
     setScheduledAt,
@@ -1166,14 +1409,10 @@ function TransportistaHomeView(props: TransportistaHomeViewProps) {
                 setDestination,
                 nodeReference,
                 setNodeReference,
-                originNodeSearch,
-                setOriginNodeSearch,
-                destinationNodeSearch,
-                setDestinationNodeSearch,
                 activeNodes,
-                originSelectedNode,
-                destinationSelectedNode,
                 isLoadingNodes,
+                recentNodeIds,
+                onRegisterRecentNode,
                 manualAddressModal,
                 manualAddressDraft,
                 setManualAddressDraft,
@@ -1239,14 +1478,10 @@ function TransportistaHomeView(props: TransportistaHomeViewProps) {
                 setDestination,
                 nodeReference,
                 setNodeReference,
-                originNodeSearch,
-                setOriginNodeSearch,
-                destinationNodeSearch,
-                setDestinationNodeSearch,
                 activeNodes,
-                originSelectedNode,
-                destinationSelectedNode,
                 isLoadingNodes,
+                recentNodeIds,
+                onRegisterRecentNode,
                 manualAddressModal,
                 manualAddressDraft,
                 setManualAddressDraft,
@@ -1444,8 +1679,16 @@ export default function TransportistaPanel() {
 
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
-  const [originNodeSearch, setOriginNodeSearch] = useState("");
-  const [destinationNodeSearch, setDestinationNodeSearch] = useState("");
+  const [recentNodeIds, setRecentNodeIds] = useState<string[]>(() => loadRecentNodeIdsFromStorage());
+
+  const registerRecentNode = useCallback((nodeId: string) => {
+    if (!nodeId) return;
+    setRecentNodeIds((prev) => {
+      const next = [nodeId, ...prev.filter((id) => id !== nodeId)].slice(0, MAX_RECENT_NODES);
+      persistRecentNodeIds(next);
+      return next;
+    });
+  }, []);
   const [nodeReference, setNodeReference] = useState("");
 
   const [manualAddressModal, setManualAddressModal] = useState<null | "origin" | "destination">(
@@ -2053,13 +2296,9 @@ export default function TransportistaPanel() {
             setDestination={setDestination}
             nodeReference={nodeReference}
             setNodeReference={setNodeReference}
-            originNodeSearch={originNodeSearch}
-            setOriginNodeSearch={setOriginNodeSearch}
-            destinationNodeSearch={destinationNodeSearch}
-            setDestinationNodeSearch={setDestinationNodeSearch}
             activeNodes={activeNodes}
-            originSelectedNode={originSelectedNode}
-            destinationSelectedNode={destinationSelectedNode}
+            recentNodeIds={recentNodeIds}
+            onRegisterRecentNode={registerRecentNode}
             isLoadingNodes={isLoadingNodes}
             scheduledAt={scheduledAt}
             setScheduledAt={setScheduledAt}
@@ -2586,14 +2825,10 @@ function renderSharedForm({
   setDestination,
   nodeReference,
   setNodeReference,
-  originNodeSearch,
-  setOriginNodeSearch,
-  destinationNodeSearch,
-  setDestinationNodeSearch,
   activeNodes,
-  originSelectedNode,
-  destinationSelectedNode,
   isLoadingNodes,
+  recentNodeIds,
+  onRegisterRecentNode,
   manualAddressModal,
   manualAddressDraft,
   setManualAddressDraft,
@@ -2622,14 +2857,10 @@ function renderSharedForm({
   setDestination: (value: string) => void;
   nodeReference: string;
   setNodeReference: (value: string) => void;
-  originNodeSearch: string;
-  setOriginNodeSearch: (value: string) => void;
-  destinationNodeSearch: string;
-  setDestinationNodeSearch: (value: string) => void;
   activeNodes: NodeItem[];
-  originSelectedNode: NodeItem | null;
-  destinationSelectedNode: NodeItem | null;
   isLoadingNodes: boolean;
+  recentNodeIds: readonly string[];
+  onRegisterRecentNode: (nodeId: string) => void;
   manualAddressModal: "origin" | "destination" | null;
   manualAddressDraft: string;
   setManualAddressDraft: (value: string) => void;
@@ -2637,66 +2868,6 @@ function renderSharedForm({
   closeManualAddressModal: () => void;
   confirmManualAddressModal: () => void;
 }) {
-  const scrollFieldIntoView = (target: EventTarget | null) => {
-    if (typeof window === "undefined") return;
-    const element =
-      target && target instanceof HTMLElement
-        ? target
-        : target && target instanceof Element
-          ? (target as HTMLElement)
-          : null;
-    if (!element) return;
-    // #region agent log
-    postTransportistaDebugLog(
-      "H2",
-      "TransportistaPanel.tsx:scrollFieldIntoView",
-      "scroll-into-view-scheduled",
-      {
-        tag: element.tagName,
-        id: element.id || null,
-        className: element.className || null,
-      },
-    );
-    // #endregion
-    const runScroll = () => {
-      const rect = element.getBoundingClientRect();
-      const viewportH = window.innerHeight || document.documentElement.clientHeight;
-      const isMostlyVisible =
-        rect.top >= 56 && rect.bottom <= Math.max(56, viewportH - 24);
-
-      // #region agent log
-      postTransportistaDebugLog(
-        "H2",
-        "TransportistaPanel.tsx:scrollFieldIntoView",
-        "scroll-into-view-evaluated",
-        {
-          top: Math.round(rect.top),
-          bottom: Math.round(rect.bottom),
-          viewportH,
-          isMostlyVisible,
-        },
-      );
-      // #endregion
-
-      if (isMostlyVisible) return;
-      element.scrollIntoView({ behavior: "auto", block: "center", inline: "nearest" });
-      // #region agent log
-      postTransportistaDebugLog(
-        "H2",
-        "TransportistaPanel.tsx:scrollFieldIntoView",
-        "scroll-into-view-executed",
-        { strategy: "raf-auto-center" },
-      );
-      // #endregion
-    };
-
-    if (typeof window.requestAnimationFrame === "function") {
-      window.requestAnimationFrame(runScroll);
-    } else {
-      runScroll();
-    }
-  };
-
   return (
     <>
     <div className="min-h-screen flex flex-col">
@@ -2837,92 +3008,16 @@ function renderSharedForm({
         )}
 
         {originMode === "NODE" ? (
-          <div className="space-y-2">
-            <Label>Nodo de origen</Label>
-            <Select value={originNodeId} onValueChange={setOriginNodeId}>
-              <SelectTrigger className="rounded-xl">
-                <SelectValue
-                  placeholder={
-                    isLoadingNodes
-                      ? "Cargando nodos..."
-                      : "Seleccionar nodo de origen"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {activeNodes.length > 0 && (
-                  <div className="p-2 sticky top-0 bg-white z-10">
-                    <Input
-                      placeholder="Buscar por nombre, tipo o zona..."
-                      value={originNodeSearch}
-                      onChange={(e) => {
-                        setOriginNodeSearch(e.target.value);
-                      }}
-                      onFocus={(e) => {
-                        // #region agent log
-                        postTransportistaDebugLog(
-                          "H2",
-                          "TransportistaPanel.tsx:originNodeSearch",
-                          "origin-node-search-focus",
-                          { valueLength: e.currentTarget.value.length },
-                        );
-                        // #endregion
-                        scrollFieldIntoView(e.currentTarget);
-                      }}
-                      className="h-8 text-xs rounded-xl"
-                    />
-                  </div>
-                )}
-
-                {activeNodes.length === 0 ? (
-                  <SelectItem value="no-nodes-origin" disabled>
-                    No hay nodos activos disponibles
-                  </SelectItem>
-                ) : (
-                  activeNodes
-                    .filter((node) => {
-                      if (!originNodeSearch.trim()) return true;
-                      const needle = normalizeComparableText(originNodeSearch);
-                      const composite = normalizeComparableText(
-                        `${node.name} ${node.category || ""} ${node.zone || ""}`,
-                      );
-                      return composite.includes(needle);
-                    })
-                    .map((node) => {
-                      const zoneText = node.zone || "Sin zona";
-                      const categoryText = (node.category || "").replace(/_/g, " ");
-
-                      return (
-                        <SelectItem key={node.node_id} value={node.node_id}>
-                          <div className="flex flex-col text-left">
-                            <span className="text-sm font-medium text-slate-900">
-                              {node.name}
-                            </span>
-                            <span className="text-xs text-slate-500">
-                              {zoneText} · {categoryText}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      );
-                    })
-                )}
-              </SelectContent>
-            </Select>
-
-            {originSelectedNode && (
-              <div className="rounded-xl border bg-gray-50 p-3 text-sm text-gray-600">
-                <p className="font-medium text-gray-800">
-                  {originSelectedNode.name}
-                </p>
-                <p>
-                  {originSelectedNode.zone || "Sin zona"} · {originSelectedNode.category}
-                </p>
-                {originSelectedNode.address_text && (
-                  <p>{originSelectedNode.address_text}</p>
-                )}
-              </div>
-            )}
-          </div>
+          <NodeQuickPicker
+            idPrefix="transportista-origin-node"
+            label="Nodo de origen"
+            nodes={activeNodes}
+            value={originNodeId}
+            onValueChange={setOriginNodeId}
+            recentNodeIds={recentNodeIds}
+            onRegisterRecent={onRegisterRecentNode}
+            disabled={isLoadingNodes}
+          />
         ) : (
           <div className="space-y-3">
             <Label>Dirección manual</Label>
@@ -3037,95 +3132,16 @@ function renderSharedForm({
         )}
 
         {destinationMode === "NODE" ? (
-          <div className="space-y-2">
-            <Label>Nodo de destino</Label>
-            <Select
-              value={destinationNodeId}
-              onValueChange={setDestinationNodeId}
-            >
-              <SelectTrigger className="rounded-xl">
-                <SelectValue
-                  placeholder={
-                    isLoadingNodes
-                      ? "Cargando nodos..."
-                      : "Seleccionar nodo de destino"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {activeNodes.length > 0 && (
-                  <div className="p-2 sticky top-0 bg-white z-10">
-                    <Input
-                      placeholder="Buscar por nombre, tipo o zona..."
-                      value={destinationNodeSearch}
-                      onChange={(e) => {
-                        setDestinationNodeSearch(e.target.value);
-                      }}
-                      onFocus={(e) => {
-                        // #region agent log
-                        postTransportistaDebugLog(
-                          "H2",
-                          "TransportistaPanel.tsx:destinationNodeSearch",
-                          "destination-node-search-focus",
-                          { valueLength: e.currentTarget.value.length },
-                        );
-                        // #endregion
-                        scrollFieldIntoView(e.currentTarget);
-                      }}
-                      className="h-8 text-xs rounded-xl"
-                    />
-                  </div>
-                )}
-
-                {activeNodes.length === 0 ? (
-                  <SelectItem value="no-nodes-destination" disabled>
-                    No hay nodos activos disponibles
-                  </SelectItem>
-                ) : (
-                  activeNodes
-                    .filter((node) => {
-                      if (!destinationNodeSearch.trim()) return true;
-                      const needle = normalizeComparableText(destinationNodeSearch);
-                      const composite = normalizeComparableText(
-                        `${node.name} ${node.category || ""} ${node.zone || ""}`,
-                      );
-                      return composite.includes(needle);
-                    })
-                    .map((node) => {
-                      const zoneText = node.zone || "Sin zona";
-                      const categoryText = (node.category || "").replace(/_/g, " ");
-
-                      return (
-                        <SelectItem key={node.node_id} value={node.node_id}>
-                          <div className="flex flex-col text-left">
-                            <span className="text-sm font-medium text-slate-900">
-                              {node.name}
-                            </span>
-                            <span className="text-xs text-slate-500">
-                              {zoneText} · {categoryText}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      );
-                    })
-                )}
-              </SelectContent>
-            </Select>
-
-            {destinationSelectedNode && (
-              <div className="rounded-xl border bg-gray-50 p-3 text-sm text-gray-600">
-                <p className="font-medium text-gray-800">
-                  {destinationSelectedNode.name}
-                </p>
-                <p>
-                  {destinationSelectedNode.zone || "Sin zona"} · {destinationSelectedNode.category}
-                </p>
-                {destinationSelectedNode.address_text && (
-                  <p>{destinationSelectedNode.address_text}</p>
-                )}
-              </div>
-            )}
-          </div>
+          <NodeQuickPicker
+            idPrefix="transportista-destination-node"
+            label="Nodo de destino"
+            nodes={activeNodes}
+            value={destinationNodeId}
+            onValueChange={setDestinationNodeId}
+            recentNodeIds={recentNodeIds}
+            onRegisterRecent={onRegisterRecentNode}
+            disabled={isLoadingNodes}
+          />
         ) : (
           <div className="space-y-3">
             <Label>Dirección manual</Label>
