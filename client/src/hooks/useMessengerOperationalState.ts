@@ -519,6 +519,34 @@ export function useMessengerOperationalState() {
       }, 200);
     };
 
+    const extractCancelledServiceId = (o: Record<string, unknown>): string | null => {
+      const rootType = o.type ?? o.event;
+      if (rootType === "service.cancelled") {
+        const sid = String(o.service_id ?? o.serviceId ?? "").trim();
+        if (sid) return sid;
+      }
+      if (isObject(o.data)) {
+        const d = o.data as Record<string, unknown>;
+        if ((d.type ?? d.event) === "service.cancelled") {
+          const sid = String(d.service_id ?? d.serviceId ?? "").trim();
+          if (sid) return sid;
+        }
+      }
+      return null;
+    };
+
+    const applyServiceCancelled = (serviceId: string) => {
+      if (!serviceId) return;
+      setAvailableServices((prev) => prev.filter((s) => s.service_id !== serviceId));
+      setOfferIdByServiceId((prev) => {
+        if (!(serviceId in prev)) return prev;
+        const next = { ...prev };
+        delete next[serviceId];
+        return next;
+      });
+      scheduleOffersRefreshFromRealtime();
+    };
+
     const onMessage = (ev: MessageEvent) => {
       try {
         const raw = typeof ev.data === "string" ? ev.data : "";
@@ -532,6 +560,13 @@ export function useMessengerOperationalState() {
         for (const item of candidates) {
           if (!isObject(item)) continue;
           const o = item as Record<string, unknown>;
+
+          const cancelledId = extractCancelledServiceId(o);
+          if (cancelledId) {
+            applyServiceCancelled(cancelledId);
+            break;
+          }
+
           const eventType = o.type ?? o.event;
           if (eventType !== "offer.created") continue;
 

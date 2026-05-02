@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { http } from "@/api/http";
-import { clearToken, setToken } from "@/authStorage";
+import { clearSession, setRefreshToken, setToken } from "@/authStorage";
 import { normalizeAuthUser } from "@/authUser";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, UserPlus } from "lucide-react";
@@ -15,6 +15,8 @@ import axios from "axios";
 type RegisterTransportistaResponse = {
   access_token?: string;
   accessToken?: string;
+  refresh_token?: string;
+  refreshToken?: string;
   user?: unknown;
 };
 
@@ -54,7 +56,7 @@ export default function RegisterTransportista() {
 
     setIsPending(true);
     try {
-      clearToken();
+      clearSession();
 
       const body: Record<string, string> = {
         name: name.trim(),
@@ -80,12 +82,16 @@ export default function RegisterTransportista() {
       }
 
       setToken(token);
+      const refresh = data?.refresh_token ?? data?.refreshToken;
+      if (typeof refresh === "string" && refresh.trim()) {
+        setRefreshToken(refresh);
+      }
 
       const meRes = await http.get("/v1/auth/me");
       const normalized = normalizeAuthUser(meRes.data);
 
       if (!normalized) {
-        clearToken();
+        clearSession();
         toast.error("No se pudo obtener el perfil del usuario");
         return;
       }

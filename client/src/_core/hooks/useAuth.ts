@@ -1,6 +1,6 @@
 import { getLoginUrl } from "@/const";
 import { http } from "@/api/http";
-import { clearToken, getToken } from "@/authStorage";
+import { clearSession, getRefreshToken, getToken } from "@/authStorage";
 import {
   normalizeAuthUser,
   readCachedAuthUser,
@@ -79,13 +79,22 @@ export function useAuth(options?: UseAuthOptions) {
   }, [user]);
 
   const logout = useCallback(async () => {
-    clearToken();
-    setUser(null);
-    setError(null);
+    const rt = getRefreshToken();
     try {
-      localStorage.setItem(RUNTIME_USER_INFO_KEY, JSON.stringify(null));
+      if (rt) {
+        await http.post("/v1/auth/logout", { refresh_token: rt }, { skipAuthRefresh: true });
+      }
     } catch {
-      /* ignore */
+      /* ignorar: siempre limpiar sesión local */
+    } finally {
+      clearSession();
+      setUser(null);
+      setError(null);
+      try {
+        localStorage.setItem(RUNTIME_USER_INFO_KEY, JSON.stringify(null));
+      } catch {
+        /* ignore */
+      }
     }
   }, []);
 

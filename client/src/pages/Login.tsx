@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import rutafyLogo from "@/assets/rutafy-logo.png";
 import { http } from "@/api/http";
-import { clearToken, setToken } from "@/authStorage";
+import { clearSession, setRefreshToken, setToken } from "@/authStorage";
 import { normalizeAuthUser } from "@/authUser";
 import { toast } from "sonner";
 import { ArrowLeft, Eye, EyeOff, Loader2 } from "lucide-react";
@@ -31,6 +31,8 @@ export default function Login() {
       const { data } = await http.post<{
         access_token?: string;
         accessToken?: string;
+        refresh_token?: string;
+        refreshToken?: string;
       }>("/v1/auth/login", {
         phone: phone.trim(),
         password,
@@ -43,12 +45,16 @@ export default function Login() {
       }
 
       setToken(token);
+      const refresh = data?.refresh_token ?? data?.refreshToken;
+      if (typeof refresh === "string" && refresh.trim()) {
+        setRefreshToken(refresh);
+      }
 
       const meRes = await http.get("/v1/auth/me");
       const normalized = normalizeAuthUser(meRes.data);
 
       if (!normalized) {
-        clearToken();
+        clearSession();
         toast.error("No se pudo obtener el perfil del usuario");
         return;
       }
