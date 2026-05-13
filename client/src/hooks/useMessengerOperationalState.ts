@@ -4,6 +4,7 @@ import {
   acceptServiceOffer,
   getActiveOffersByMessenger,
   patchMessengerAvailability,
+  patchMessengerLocation,
 } from "@/api/services";
 import { getToken } from "@/authStorage";
 import { buildMessengerRealtimeWebSocketUrl } from "@/lib/messengerRealtimeWs";
@@ -147,6 +148,8 @@ export function isValidUuid(value: string): boolean {
     value.trim()
   );
 }
+
+const MESSENGER_LOCATION_MIN_INTERVAL_MS = 15_000;
 
 export function buildAbsoluteUrl(fileUrl?: string | null): string | null {
   if (!fileUrl) return null;
@@ -318,6 +321,7 @@ export function useMessengerOperationalState() {
   const [currentLng, setCurrentLng] = useState<number | null>(null);
   const [locationRequested, setLocationRequested] = useState(false);
   const [showFullQueues, setShowFullQueues] = useState(false);
+  const [realtimeReconnectVersion, setRealtimeReconnectVersion] = useState(0);
 
   const sessionActorIdRaw =
     user?.actor_id != null ? String(user.actor_id).trim() : "";
@@ -334,6 +338,8 @@ export function useMessengerOperationalState() {
     : hasAuthenticatedActor
       ? sessionActorId
       : manualActorId.trim();
+
+  const messengerRealtimeAccessKey = getToken() ?? "";
 
   useEffect(() => {
     if (import.meta.env.DEV) {
@@ -427,6 +433,9 @@ export function useMessengerOperationalState() {
   const refreshAvailableServicesRef = useRef(refreshAvailableServices);
   refreshAvailableServicesRef.current = refreshAvailableServices;
 
+  const lastLocationSentAtRef = useRef(0);
+  const locationWatchIdRef = useRef<number | null>(null);
+
   const loadServiceEvidences = useCallback(async (serviceId: string, silent = false) => {
     setLoadingEvidenceServiceId(serviceId);
     try {
@@ -485,19 +494,143 @@ export function useMessengerOperationalState() {
     return () => window.clearInterval(timer);
   }, [loading, isOnline, actorId, refreshMyServices, refreshAvailableServices]);
 
+  useEffect(() => {
+    const clearLocationWatch = () => {
+      if (
+        locationWatchIdRef.current != null &&
+        typeof navigator !== "undefined" &&
+        navigator.geolocation
+      ) {
+        navigator.geolocation.clearWatch(locationWatchIdRef.current);
+      }
+      locationWatchIdRef.current = null;
+    };
+
+    if (typeof window === "undefined") {
+      return () => {
+        clearLocationWatch();
+      };
+    }
+
+    if (
+      loading ||
+      !user ||
+      user.appRole !== "MENSAJERO" ||
+      !isOnline ||
+      !actorId ||
+      !isValidUuid(actorId)
+    ) {
+      clearLocationWatch();
+      return () => {
+        clearLocationWatch();
+      };
+    }
+
+    if (!navigator.geolocation) {
+      return () => {
+        clearLocationWatch();
+      };
+    }
+
+    const geoOptions: PositionOptions = {
+      enableHighAccuracy: true,
+      maximumAge: 10000,
+      timeout: 15000,
+    };
+
+    const onSuccess = (position: GeolocationPosition) => {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      const now = Date.now();
+      if (now - lastLocationSentAtRef.current < MESSENGER_LOCATION_MIN_INTERVAL_MS) {
+        return;
+      }
+      lastLocationSentAtRef.current = now;
+      void patchMessengerLocation(actorId, { lat, lng }).catch((err: unknown) => {
+        console.warn("[messenger-location]", err);
+      });
+    };
+
+    const onError = (error: GeolocationPositionError) => {
+      console.warn("[messenger-location]", error);
+    };
+
+    locationWatchIdRef.current = navigator.geolocation.watchPosition(
+      onSuccess,
+      onError,
+      geoOptions,
+    );
+
+    return () => {
+      clearLocationWatch();
+    };
+  }, [loading, isOnline, actorId, user]);
+
   const wsOfferDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const lastTokenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const onTokenRefreshed = () => {
+      setRealtimeReconnectVersion((v) => v + 1);
+    };
+
+    const onAuthLogout = () => {
+      const w = wsRef.current;
+      if (w && (w.readyState === WebSocket.OPEN || w.readyState === WebSocket.CONNECTING)) {
+        w.close();
+      }
+      wsRef.current = null;
+      lastTokenRef.current = null;
+      if (wsOfferDebounceRef.current != null) {
+        clearTimeout(wsOfferDebounceRef.current);
+        wsOfferDebounceRef.current = null;
+      }
+    };
+
+    window.addEventListener("auth:token-refreshed", onTokenRefreshed);
+    window.addEventListener("auth:logout", onAuthLogout);
+    return () => {
+      window.removeEventListener("auth:token-refreshed", onTokenRefreshed);
+      window.removeEventListener("auth:logout", onAuthLogout);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (loading) return;
-    if (!isOnline) return;
-    if (!actorId || !isValidUuid(actorId)) return;
+
+    const shutdownRealtimeSocket = () => {
+      const w = wsRef.current;
+      if (w && (w.readyState === WebSocket.OPEN || w.readyState === WebSocket.CONNECTING)) {
+        w.close();
+      }
+      wsRef.current = null;
+      lastTokenRef.current = null;
+      if (wsOfferDebounceRef.current != null) {
+        clearTimeout(wsOfferDebounceRef.current);
+        wsOfferDebounceRef.current = null;
+      }
+    };
+
+    if (!isOnline || !actorId || !isValidUuid(actorId)) {
+      shutdownRealtimeSocket();
+      return;
+    }
+
+    shutdownRealtimeSocket();
 
     const token = getToken();
-    if (!token) return;
+    if (!token) {
+      return;
+    }
 
     const wsUrl = buildMessengerRealtimeWebSocketUrl(token);
-    if (!wsUrl) return;
+    if (!wsUrl) {
+      return;
+    }
 
     let ws: WebSocket;
     try {
@@ -508,6 +641,9 @@ export function useMessengerOperationalState() {
       }
       return;
     }
+
+    wsRef.current = ws;
+    lastTokenRef.current = token;
 
     const scheduleOffersRefreshFromRealtime = () => {
       if (wsOfferDebounceRef.current != null) {
@@ -602,11 +738,17 @@ export function useMessengerOperationalState() {
         wsOfferDebounceRef.current = null;
       }
       ws.removeEventListener("message", onMessage);
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        ws.close();
+      if (wsRef.current === ws) {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
+        wsRef.current = null;
+      }
+      if (lastTokenRef.current === token) {
+        lastTokenRef.current = null;
       }
     };
-  }, [loading, isOnline, actorId]);
+  }, [loading, isOnline, actorId, messengerRealtimeAccessKey, realtimeReconnectVersion]);
 
   useEffect(() => {
     return () => {

@@ -60,3 +60,14 @@ export async function patchMessengerAvailability(
   );
   return data;
 }
+
+export async function patchMessengerLocation(
+  messengerId: string,
+  body: { lat: number; lng: number },
+) {
+  const { data } = await http.patch(
+    `/v1/messengers/${encodeURIComponent(messengerId)}/location`,
+    body,
+  );
+  return data;
+}
