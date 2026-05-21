@@ -85,6 +85,12 @@ type LocalServiceItem = {
   fare_currency?: string | null;
   vehicle_plate?: string | null;
   operational_instructions?: string | null;
+  estimated_route_distance_km?: number | null;
+  estimated_route_duration_minutes?: number | null;
+  eta_pickup_at?: string | null;
+  eta_delivery_at?: string | null;
+  sla_pickup_deadline_at?: string | null;
+  sla_delivery_deadline_at?: string | null;
 };
 
 type BackendCreateServiceResponse = Record<string, unknown>;
@@ -137,6 +143,12 @@ type BackendServiceRow = {
   vehicle_plate?: string | null;
   vehiclePlate?: string | null;
   operational_instructions?: string | null;
+  estimated_route_distance_km?: number | null;
+  estimated_route_duration_minutes?: number | null;
+  eta_pickup_at?: string | null;
+  eta_delivery_at?: string | null;
+  sla_pickup_deadline_at?: string | null;
+  sla_delivery_deadline_at?: string | null;
 };
 
 type BackendServicesListResponse = {
@@ -388,7 +400,23 @@ function normalizeBackendServiceToLocal(
       String(service.operational_instructions).trim() !== ""
         ? String(service.operational_instructions)
         : null,
+    estimated_route_distance_km: service.estimated_route_distance_km ?? null,
+    estimated_route_duration_minutes: service.estimated_route_duration_minutes ?? null,
+    eta_pickup_at: service.eta_pickup_at ?? null,
+    eta_delivery_at: service.eta_delivery_at ?? null,
+    sla_pickup_deadline_at: service.sla_pickup_deadline_at ?? null,
+    sla_delivery_deadline_at: service.sla_delivery_deadline_at ?? null,
   };
+}
+
+function formatMinutesUntil(iso?: string | null): string | null {
+  if (iso == null || String(iso).trim() === "") return null;
+  const targetMs = Date.parse(String(iso));
+  if (!Number.isFinite(targetMs)) return null;
+  const minutes = (targetMs - Date.now()) / 60_000;
+  if (minutes <= 0) return null;
+  if (minutes < 1) return "menos de 1 min";
+  return `${Math.ceil(minutes)} min`;
 }
 
 function formatOptionalFare(
@@ -924,6 +952,11 @@ function AssignedServiceView({
   canCancel: boolean;
   isCancelling: boolean;
 }) {
+  const pickupEtaLabel =
+    activeService.eta_pickup_at != null
+      ? formatMinutesUntil(activeService.eta_pickup_at)
+      : null;
+
   return (
     <div className="space-y-5">
       <div className="space-y-2">
@@ -936,6 +969,11 @@ function AssignedServiceView({
         <p className="text-sm leading-relaxed text-white/90">
           El mensajero se dirige al punto de recogida.
         </p>
+        {pickupEtaLabel ? (
+          <p className="text-sm font-medium text-white/95">
+            Mensajero llega aprox. en {pickupEtaLabel}
+          </p>
+        ) : null}
       </div>
 
       <div className="rounded-2xl border border-white/15 bg-white/10 p-4 text-sm text-white/95 backdrop-blur-sm space-y-3">
@@ -1005,6 +1043,11 @@ function InProgressServiceView({
   activeService: LocalServiceItem;
   closePin: string | null;
 }) {
+  const deliveryEtaLabel =
+    activeService.eta_delivery_at != null
+      ? formatMinutesUntil(activeService.eta_delivery_at)
+      : null;
+
   return (
     <div className="space-y-5">
       <div className="space-y-2">
@@ -1014,6 +1057,11 @@ function InProgressServiceView({
         <h2 className="text-lg font-bold leading-snug text-white sm:text-xl">
           El mensajero está realizando la entrega
         </h2>
+        {deliveryEtaLabel ? (
+          <p className="text-sm font-medium text-white/95">
+            Entrega estimada en {deliveryEtaLabel}
+          </p>
+        ) : null}
       </div>
 
       <div className="rounded-2xl border border-white/15 bg-white/10 p-4 text-sm text-white/95 backdrop-blur-sm space-y-3">
