@@ -419,6 +419,13 @@ function formatMinutesUntil(iso?: string | null): string | null {
   return `${Math.ceil(minutes)} min`;
 }
 
+function isSlaDeadlineBreached(deadlineIso?: string | null): boolean {
+  if (deadlineIso == null || String(deadlineIso).trim() === "") return false;
+  const deadlineMs = Date.parse(String(deadlineIso));
+  if (!Number.isFinite(deadlineMs)) return false;
+  return Date.now() > deadlineMs;
+}
+
 function formatOptionalFare(
   fareAmount?: number | string | null,
   fareCurrency?: string | null,
@@ -952,8 +959,9 @@ function AssignedServiceView({
   canCancel: boolean;
   isCancelling: boolean;
 }) {
+  const pickupSlaBreached = isSlaDeadlineBreached(activeService.sla_pickup_deadline_at);
   const pickupEtaLabel =
-    activeService.eta_pickup_at != null
+    !pickupSlaBreached && activeService.eta_pickup_at != null
       ? formatMinutesUntil(activeService.eta_pickup_at)
       : null;
 
@@ -969,7 +977,14 @@ function AssignedServiceView({
         <p className="text-sm leading-relaxed text-white/90">
           El mensajero se dirige al punto de recogida.
         </p>
-        {pickupEtaLabel ? (
+        {pickupSlaBreached ? (
+          <p
+            role="alert"
+            className="rounded-xl border border-amber-200/50 bg-amber-500/25 px-3 py-2 text-sm font-semibold text-amber-50"
+          >
+            Recogida retrasada
+          </p>
+        ) : pickupEtaLabel ? (
           <p className="text-sm font-medium text-white/95">
             Mensajero llega aprox. en {pickupEtaLabel}
           </p>
@@ -1043,8 +1058,9 @@ function InProgressServiceView({
   activeService: LocalServiceItem;
   closePin: string | null;
 }) {
+  const deliverySlaBreached = isSlaDeadlineBreached(activeService.sla_delivery_deadline_at);
   const deliveryEtaLabel =
-    activeService.eta_delivery_at != null
+    !deliverySlaBreached && activeService.eta_delivery_at != null
       ? formatMinutesUntil(activeService.eta_delivery_at)
       : null;
 
@@ -1057,7 +1073,14 @@ function InProgressServiceView({
         <h2 className="text-lg font-bold leading-snug text-white sm:text-xl">
           El mensajero está realizando la entrega
         </h2>
-        {deliveryEtaLabel ? (
+        {deliverySlaBreached ? (
+          <p
+            role="alert"
+            className="rounded-xl border border-amber-200/50 bg-amber-500/25 px-3 py-2 text-sm font-semibold text-amber-50"
+          >
+            Entrega retrasada
+          </p>
+        ) : deliveryEtaLabel ? (
           <p className="text-sm font-medium text-white/95">
             Entrega estimada en {deliveryEtaLabel}
           </p>
