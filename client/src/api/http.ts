@@ -62,8 +62,14 @@ function redirectToLoginIfNeeded(): void {
   }
 }
 
+function dispatchAuthLogoutEvent(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("auth:logout"));
+}
+
 function clearAuthStorageAndCache(): void {
   clearSession();
+  dispatchAuthLogoutEvent();
   try {
     localStorage.removeItem(RUNTIME_USER_INFO_KEY);
   } catch {
@@ -87,6 +93,9 @@ function refreshAccessTokenShared(): Promise<string | null> {
         if (typeof at === "string" && at.trim()) {
           const trimmed = at.trim();
           setToken(trimmed);
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("auth:token-refreshed"));
+          }
           return trimmed;
         }
         return null;

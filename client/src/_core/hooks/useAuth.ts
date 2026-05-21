@@ -88,6 +88,9 @@ export function useAuth(options?: UseAuthOptions) {
       /* ignorar: siempre limpiar sesión local */
     } finally {
       clearSession();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("auth:logout"));
+      }
       setUser(null);
       setError(null);
       try {
