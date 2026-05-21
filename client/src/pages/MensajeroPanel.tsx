@@ -155,6 +155,31 @@ function formatDateTime(value?: string | null): string {
   }
 }
 
+function formatMinutesUntil(iso?: string | null): string | null {
+  if (iso == null || String(iso).trim() === "") return null;
+  const targetMs = Date.parse(String(iso));
+  if (!Number.isFinite(targetMs)) return null;
+  const minutes = (targetMs - Date.now()) / 60_000;
+  if (minutes <= 0) return null;
+  if (minutes < 1) return "menos de 1 min";
+  return `${Math.ceil(minutes)} min`;
+}
+
+function isSlaDeadlineBreached(deadlineIso?: string | null): boolean {
+  if (deadlineIso == null || String(deadlineIso).trim() === "") return false;
+  const deadlineMs = Date.parse(String(deadlineIso));
+  if (!Number.isFinite(deadlineMs)) return false;
+  return Date.now() > deadlineMs;
+}
+
+/** ETA y SLA expuestos por el API; tipado local sin modificar el hook. */
+type BackendServiceWithEta = BackendService & {
+  eta_pickup_at?: string | null;
+  eta_delivery_at?: string | null;
+  sla_pickup_deadline_at?: string | null;
+  sla_delivery_deadline_at?: string | null;
+};
+
 function OfflineView(props: { onToggle: () => void }) {
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-6 gap-4">
@@ -339,6 +364,13 @@ function AssignedView(props: {
   onStart: () => Promise<void> | void;
   isStarting: boolean;
 }) {
+  const service = props.service as BackendServiceWithEta;
+  const pickupSlaBreached = isSlaDeadlineBreached(service.sla_pickup_deadline_at);
+  const pickupEtaLabel =
+    !pickupSlaBreached && service.eta_pickup_at != null
+      ? formatMinutesUntil(service.eta_pickup_at)
+      : null;
+
   return (
     <div className="min-h-screen bg-orange-50 flex flex-col px-6 py-6">
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6">
@@ -358,6 +390,19 @@ function AssignedView(props: {
             </p>
           </div>
         </div>
+
+        {pickupSlaBreached ? (
+          <p
+            role="alert"
+            className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm font-semibold text-amber-900"
+          >
+            Recogida retrasada
+          </p>
+        ) : pickupEtaLabel ? (
+          <p className="text-sm font-medium text-amber-900/90 text-center">
+            Llegas al punto aprox. en {pickupEtaLabel}
+          </p>
+        ) : null}
 
         <Button
           type="button"
@@ -399,6 +444,13 @@ function InServiceView(props: {
   const isPinValid = props.closePin.trim().length === 4;
   const isUploading = props.uploadingEvidenceServiceId === props.service.service_id;
 
+  const serviceWithEta = props.service as BackendServiceWithEta;
+  const deliverySlaBreached = isSlaDeadlineBreached(serviceWithEta.sla_delivery_deadline_at);
+  const deliveryEtaLabel =
+    !deliverySlaBreached && serviceWithEta.eta_delivery_at != null
+      ? formatMinutesUntil(serviceWithEta.eta_delivery_at)
+      : null;
+
   return (
     <div className="min-h-screen bg-green-50 flex flex-col px-6 py-6">
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6">
@@ -418,6 +470,19 @@ function InServiceView(props: {
             </p>
           </div>
         </div>
+
+        {deliverySlaBreached ? (
+          <p
+            role="alert"
+            className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm font-semibold text-amber-900"
+          >
+            Entrega retrasada
+          </p>
+        ) : deliveryEtaLabel ? (
+          <p className="text-sm font-medium text-green-900/90 text-center">
+            Entrega estimada en {deliveryEtaLabel}
+          </p>
+        ) : null}
 
         <div className="rounded-xl border border-green-200/80 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
