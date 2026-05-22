@@ -27,6 +27,7 @@ import {
   LogOut,
   MapPin,
   PanelLeft,
+  TriangleAlert,
   Truck,
   Users,
 } from "lucide-react";
@@ -41,6 +42,7 @@ const menuItems = [
   { icon: Users, label: "Usuarios", path: "/admin/users" },
   { icon: Truck, label: "Servicios", path: "/admin/services" },
   { icon: MapPin, label: "Nodos", path: "/admin/nodes" },
+  { icon: TriangleAlert, label: "Alertas", path: "/admin/alerts" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "admin-sidebar-width";
