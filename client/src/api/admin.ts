@@ -40,18 +40,29 @@ function getAdminKey(): string {
   return typeof key === "string" ? key.trim() : "";
 }
 
-export async function getDispatchAlerts(
-  options?: GetDispatchAlertsOptions,
-): Promise<DispatchAlertsResponse> {
+function ensureAdminConfig(): { apiBase: string; adminKey: string } {
   const apiBase = getApiBase();
   const adminKey = getAdminKey();
-
   if (!apiBase) {
     throw new Error("VITE_RUTAFY_API_BASE no está configurado");
   }
   if (!adminKey) {
     throw new Error("VITE_RUTAFY_ADMIN_KEY no está configurado");
   }
+  return { apiBase, adminKey };
+}
+
+function parseErrorMessage(
+  data: { error?: string; message?: string } | null,
+  fallback: string,
+): string {
+  return data?.error || data?.message || fallback;
+}
+
+export async function getDispatchAlerts(
+  options?: GetDispatchAlertsOptions,
+): Promise<DispatchAlertsResponse> {
+  const { apiBase, adminKey } = ensureAdminConfig();
 
   const status = options?.status ?? "active";
   const limit = options?.limit ?? 50;
@@ -74,15 +85,45 @@ export async function getDispatchAlerts(
   };
 
   if (!response.ok) {
-    const message =
-      data?.error ||
-      data?.message ||
-      `Error al cargar alertas (${response.status})`;
-    throw new Error(message);
+    throw new Error(
+      parseErrorMessage(data, `Error al cargar alertas (${response.status})`),
+    );
   }
 
   return {
     ...data,
     items: Array.isArray(data.items) ? data.items : [],
   };
+}
+
+export async function redispatchService(
+  serviceId: string,
+  note?: string,
+): Promise<unknown> {
+  const { apiBase, adminKey } = ensureAdminConfig();
+  const id = serviceId.trim();
+  if (!id) {
+    throw new Error("service_id inválido");
+  }
+
+  const url = `${apiBase}/v1/admin/services/${encodeURIComponent(id)}/redispatch`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-admin-key": adminKey,
+    },
+    body: JSON.stringify({ note: note ?? "" }),
+  });
+
+  const data = (await response.json()) as { error?: string; message?: string };
+
+  if (!response.ok) {
+    throw new Error(
+      parseErrorMessage(data, `Error en redispatch (${response.status})`),
+    );
+  }
+
+  return data;
 }

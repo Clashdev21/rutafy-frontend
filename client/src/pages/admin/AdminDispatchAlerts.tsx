@@ -1,10 +1,15 @@
-import { getDispatchAlerts, type DispatchAlertItem } from "@/api/admin";
+import {
+  getDispatchAlerts,
+  redispatchService,
+  type DispatchAlertItem,
+} from "@/api/admin";
 import AdminLayout from "@/components/AdminLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { RefreshCw, TriangleAlert } from "lucide-react";
+import { ExternalLink, RefreshCw, RotateCcw, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -47,10 +52,45 @@ function getAssignedMessengerId(item: DispatchAlertItem): string | null {
   return mensajero || null;
 }
 
-function AlertRow({ item }: { item: DispatchAlertItem }) {
+function canRedispatch(item: DispatchAlertItem): boolean {
+  if (item.current_status !== "REQUESTED") return false;
+  if (item.assigned_messenger_id != null) return false;
+  const dispatch = item.dispatch_status;
+  return dispatch === "EXHAUSTED" || dispatch === "PENDING";
+}
+
+function AlertRow({
+  item,
+  onRefresh,
+}: {
+  item: DispatchAlertItem;
+  onRefresh: () => void;
+}) {
+  const [isRedispatching, setIsRedispatching] = useState(false);
   const detectedLabel = formatMinutesAgo(item.detected_at);
   const deadlineBreached = isSlaDeadlineBreached(item.sla_deadline_at);
   const messengerId = getAssignedMessengerId(item);
+  const redispatchEnabled = canRedispatch(item);
+
+  const handleViewService = () => {
+    window.open(`/admin/services/${item.service_id}`, "_blank");
+  };
+
+  const handleRedispatch = async () => {
+    if (!redispatchEnabled || isRedispatching) return;
+    setIsRedispatching(true);
+    try {
+      await redispatchService(item.service_id);
+      toast.success("Redispatch ejecutado");
+      onRefresh();
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error ? e.message : "No fue posible ejecutar redispatch";
+      toast.error(message);
+    } finally {
+      setIsRedispatching(false);
+    }
+  };
 
   return (
     <div className="rounded-lg border border-gray-100 bg-gray-50/80 p-4 space-y-3">
@@ -97,6 +137,32 @@ function AlertRow({ item }: { item: DispatchAlertItem }) {
           <span className="font-mono break-all">{messengerId}</span>
         </div>
       ) : null}
+
+      <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-200/80">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs gap-1"
+          onClick={handleViewService}
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+          Ver servicio
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="h-8 text-xs gap-1"
+          disabled={!redispatchEnabled || isRedispatching}
+          onClick={() => void handleRedispatch()}
+        >
+          <RotateCcw
+            className={`h-3.5 w-3.5 ${isRedispatching ? "animate-spin" : ""}`}
+          />
+          {isRedispatching ? "Redispatch…" : "Redispatch"}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -158,7 +224,7 @@ export default function AdminDispatchAlerts() {
           <div>
             <h1 className="text-2xl font-bold text-[#1E3A5F]">Alertas SLA</h1>
             <p className="text-gray-500 mt-1">
-              Alertas activas de dispatch (solo lectura)
+              Alertas activas de dispatch
             </p>
             {lastUpdatedAt ? (
               <p className="text-xs text-gray-400 mt-1">
@@ -215,7 +281,11 @@ export default function AdminDispatchAlerts() {
                   </p>
                 ) : null}
                 {items.map((item) => (
-                  <AlertRow key={item.alert_id} item={item} />
+                  <AlertRow
+                    key={item.alert_id}
+                    item={item}
+                    onRefresh={() => void loadAlerts({ silent: true })}
+                  />
                 ))}
               </div>
             )}
