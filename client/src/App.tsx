@@ -29,6 +29,7 @@ import AdminUsers from "./pages/admin/AdminUsers";
 import AdminServicesPage from "./pages/admin/AdminServicesPage";
 import AdminNodes from "./pages/admin/AdminNodes";
 import AdminDispatchAlerts from "./pages/admin/AdminDispatchAlerts";
+import AdminMensajerosPage from "./pages/admin/AdminMensajerosPage";
 
 function Router() {
   return (
@@ -56,6 +57,7 @@ function Router() {
       <Route path="/admin/services" component={AdminServicesPage} />
       <Route path="/admin/nodes" component={AdminNodes} />
       <Route path="/admin/alerts" component={AdminDispatchAlerts} />
+      <Route path="/admin/mensajeros" component={AdminMensajerosPage} />
 
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
