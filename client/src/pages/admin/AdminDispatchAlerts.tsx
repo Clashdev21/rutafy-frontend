@@ -18,6 +18,15 @@ const ALERT_TYPE_LABELS: Record<string, string> = {
   sla_delivery_breach: "Entrega retrasada",
 };
 
+const TITLE_CURRENT_STATUS =
+  "Estado actual del servicio. CLAIMED significa que ya fue tomado por un mensajero. REQUESTED significa que sigue pendiente.";
+
+const TITLE_DISPATCH_STATUS =
+  "Estado del proceso de asignación. EXHAUSTED significa que no hay candidatos disponibles o se agotaron las ofertas.";
+
+const TITLE_DEADLINE_VENCIDO =
+  "El plazo SLA configurado para esta etapa ya fue superado.";
+
 function formatMinutesAgo(iso?: string | null): string | null {
   if (iso == null || String(iso).trim() === "") return null;
   const detectedMs = Date.parse(String(iso));
@@ -59,6 +68,23 @@ function canRedispatch(item: DispatchAlertItem): boolean {
   return dispatch === "EXHAUSTED" || dispatch === "PENDING";
 }
 
+function getRedispatchTitle(item: DispatchAlertItem): string {
+  if (canRedispatch(item)) {
+    return "Reintentar asignación de mensajero para este servicio.";
+  }
+  if (item.current_status !== "REQUESTED") {
+    return "Solo se puede redispatchar servicios en estado REQUESTED.";
+  }
+  if (item.assigned_messenger_id != null) {
+    return "No se puede redispatchar porque el servicio ya tiene mensajero asignado.";
+  }
+  const dispatch = item.dispatch_status;
+  if (dispatch !== "EXHAUSTED" && dispatch !== "PENDING") {
+    return "Redispatch disponible solo cuando dispatch_status es EXHAUSTED o PENDING.";
+  }
+  return "Reintentar asignación de mensajero para este servicio.";
+}
+
 function AlertRow({
   item,
   onRefresh,
@@ -73,7 +99,10 @@ function AlertRow({
   const redispatchEnabled = canRedispatch(item);
 
   const handleViewService = () => {
-    window.open(`/admin/services/${item.service_id}`, "_blank");
+    window.open(
+      `/admin/services?service_id=${encodeURIComponent(item.service_id)}`,
+      "_blank",
+    );
   };
 
   const handleRedispatch = async () => {
@@ -115,17 +144,29 @@ function AlertRow({
 
       <div className="flex flex-wrap gap-2">
         {item.current_status ? (
-          <Badge variant="outline" className="text-xs">
+          <Badge
+            variant="outline"
+            className="text-xs cursor-help"
+            title={TITLE_CURRENT_STATUS}
+          >
             {item.current_status}
           </Badge>
         ) : null}
         {item.dispatch_status ? (
-          <Badge variant="secondary" className="text-xs">
+          <Badge
+            variant="secondary"
+            className="text-xs cursor-help"
+            title={TITLE_DISPATCH_STATUS}
+          >
             {item.dispatch_status}
           </Badge>
         ) : null}
         {deadlineBreached ? (
-          <Badge variant="destructive" className="text-xs">
+          <Badge
+            variant="destructive"
+            className="text-xs cursor-help"
+            title={TITLE_DEADLINE_VENCIDO}
+          >
             Deadline vencido
           </Badge>
         ) : null}
@@ -155,6 +196,7 @@ function AlertRow({
           size="sm"
           className="h-8 text-xs gap-1"
           disabled={!redispatchEnabled || isRedispatching}
+          title={getRedispatchTitle(item)}
           onClick={() => void handleRedispatch()}
         >
           <RotateCcw
