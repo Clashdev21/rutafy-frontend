@@ -1,3 +1,5 @@
+import type { OpsServiceLocation } from "@/api/admin-ops-service";
+
 export type OpsMessengerState =
   | "AVAILABLE"
   | "ASSIGNED"
@@ -22,17 +24,38 @@ export type OpsMapMessenger = {
   lng?: number | null;
 };
 
+export type RequestedOpsServiceFlags = {
+  age_min?: number | null;
+  stuck_level?: string | null;
+  sla_pickup_breach?: boolean | null;
+};
+
+export type RequestedOpsService = {
+  service_id: string;
+  service_short?: string | null;
+  status?: string | null;
+  service_type?: string | null;
+  created_at?: string | null;
+  requester_company_id?: string | null;
+  company_name?: string | null;
+  origin?: OpsServiceLocation | null;
+  destination?: OpsServiceLocation | null;
+  operational_flags?: RequestedOpsServiceFlags | null;
+};
+
 export type AdminOpsMapSnapshotResponse = {
   trace_id?: string;
   limit?: number;
   messengers?: OpsMapMessenger[];
   items?: OpsMapMessenger[];
+  requested_services?: unknown[];
 };
 
 export type AdminOpsMapSnapshot = {
   trace_id?: string;
   limit: number;
   messengers: OpsMapMessenger[];
+  requested_services: RequestedOpsService[];
 };
 
 export type GetAdminOpsMapSnapshotOptions = {
@@ -77,6 +100,61 @@ function parseErrorMessage(
   fallback: string,
 ): string {
   return data?.error || data?.message || fallback;
+}
+
+function toOptionalString(value: unknown): string | null {
+  if (value == null) return null;
+  const s = String(value).trim();
+  return s.length > 0 ? s : null;
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function pick<T>(
+  rec: Record<string, unknown>,
+  snake: string,
+  read: (value: unknown) => T | null,
+): T | null {
+  const camel = snake.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+  return read(rec[snake] ?? rec[camel]);
+}
+
+function normalizeLocation(raw: unknown): OpsServiceLocation | null {
+  if (!raw || typeof raw !== "object") return null;
+  const rec = raw as Record<string, unknown>;
+  const label = pick(rec, "label", toOptionalString);
+  const lat = pick(rec, "lat", toFiniteNumber);
+  const lng = pick(rec, "lng", toFiniteNumber);
+  if (!label && lat == null && lng == null) return null;
+  return { label, lat, lng, node: null };
+}
+
+function normalizeRequestedFlags(raw: unknown): RequestedOpsServiceFlags | null {
+  if (!raw || typeof raw !== "object") return null;
+  const rec = raw as Record<string, unknown>;
+  const ageMin = pick(rec, "age_min", toFiniteNumber);
+  const stuckLevel = pick(rec, "stuck_level", toOptionalString);
+  const slaPickupBreach =
+    rec.sla_pickup_breach === true ||
+    rec.slaPickupBreach === true ||
+    rec.sla_pickup_breach === "true"
+      ? true
+      : rec.sla_pickup_breach === false || rec.slaPickupBreach === false
+        ? false
+        : null;
+  if (ageMin == null && !stuckLevel && slaPickupBreach == null) return null;
+  return {
+    age_min: ageMin,
+    stuck_level: stuckLevel,
+    sla_pickup_breach: slaPickupBreach,
+  };
 }
 
 function normalizeOpsState(raw: unknown): OpsMessengerState {
@@ -141,12 +219,47 @@ function normalizeMessenger(raw: unknown): OpsMapMessenger | null {
   };
 }
 
+function normalizeRequestedService(raw: unknown): RequestedOpsService | null {
+  if (!raw || typeof raw !== "object") return null;
+  const rec = raw as Record<string, unknown>;
+  const serviceId = String(rec.service_id ?? rec.serviceId ?? "").trim();
+  if (!serviceId) return null;
+
+  return {
+    service_id: serviceId,
+    service_short: pick(rec, "service_short", toOptionalString),
+    status: pick(rec, "status", toOptionalString),
+    service_type: pick(rec, "service_type", toOptionalString),
+    created_at: pick(rec, "created_at", toOptionalString),
+    requester_company_id: pick(rec, "requester_company_id", toOptionalString),
+    company_name: pick(rec, "company_name", toOptionalString),
+    origin: normalizeLocation(rec.origin),
+    destination: normalizeLocation(rec.destination),
+    operational_flags: normalizeRequestedFlags(
+      rec.operational_flags ?? rec.operationalFlags,
+    ),
+  };
+}
+
 function normalizeMessengersList(data: AdminOpsMapSnapshotResponse): OpsMapMessenger[] {
   const raw = data.messengers ?? data.items ?? [];
   if (!Array.isArray(raw)) return [];
   const out: OpsMapMessenger[] = [];
   for (const item of raw) {
     const normalized = normalizeMessenger(item);
+    if (normalized) out.push(normalized);
+  }
+  return out;
+}
+
+function normalizeRequestedList(
+  data: AdminOpsMapSnapshotResponse,
+): RequestedOpsService[] {
+  const raw = data.requested_services ?? [];
+  if (!Array.isArray(raw)) return [];
+  const out: RequestedOpsService[] = [];
+  for (const item of raw) {
+    const normalized = normalizeRequestedService(item);
     if (normalized) out.push(normalized);
   }
   return out;
@@ -184,5 +297,6 @@ export async function getAdminOpsMapSnapshot(
     trace_id: data.trace_id,
     limit: data.limit ?? limit,
     messengers: normalizeMessengersList(data),
+    requested_services: normalizeRequestedList(data),
   };
 }

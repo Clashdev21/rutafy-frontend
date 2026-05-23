@@ -2,6 +2,7 @@ import {
   getAdminOpsMapSnapshot,
   type OpsMapMessenger,
   type OpsMessengerState,
+  type RequestedOpsService,
 } from "@/api/admin-ops-map";
 import {
   getAdminOpsServiceDetail,
@@ -53,10 +54,30 @@ const LEGEND_ITEMS: { state: OpsMessengerState; label: string }[] = [
   { state: "BUSY_IDLE", label: "Busy idle" },
 ];
 
+type RequestedStuckLevel = "ALERT" | "WARN" | "NORMAL";
+
+const REQUESTED_PIN_COLORS: Record<RequestedStuckLevel, string> = {
+  ALERT: "#ef4444",
+  WARN: "#f59e0b",
+  NORMAL: "#64748b",
+};
+
+const REQUESTED_LEGEND_ITEMS: { level: RequestedStuckLevel; label: string }[] = [
+  { level: "ALERT", label: "Solicitado · alerta" },
+  { level: "WARN", label: "Solicitado · aviso" },
+  { level: "NORMAL", label: "Solicitado · normal" },
+];
+
 type MapMarkerEntry = {
   marker: google.maps.marker.AdvancedMarkerElement | google.maps.Marker;
   kind: "advanced" | "classic";
   opsState: OpsMessengerState;
+};
+
+type RequestedMarkerEntry = {
+  marker: google.maps.marker.AdvancedMarkerElement | google.maps.Marker;
+  kind: "advanced" | "classic";
+  alertLevel: RequestedStuckLevel;
 };
 
 function opsStateBadgeClass(state: OpsMessengerState): string {
@@ -105,6 +126,37 @@ function locationToPosition(
   const lng = typeof loc.lng === "number" ? loc.lng : Number(loc.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   return { lat, lng };
+}
+
+function normalizeStuckLevel(raw: unknown): RequestedStuckLevel {
+  const value = String(raw ?? "")
+    .trim()
+    .toUpperCase();
+  if (value === "ALERT" || value === "WARN") return value;
+  return "NORMAL";
+}
+
+function getRequestedStuckLevel(service: RequestedOpsService): RequestedStuckLevel {
+  const flags = service.operational_flags;
+  if (flags?.sla_pickup_breach === true) return "ALERT";
+  return normalizeStuckLevel(flags?.stuck_level);
+}
+
+function getRequestedMapPosition(
+  service: RequestedOpsService,
+): google.maps.LatLngLiteral | null {
+  return (
+    locationToPosition(service.origin) ?? locationToPosition(service.destination)
+  );
+}
+
+function getRequestedMarkerTitle(service: RequestedOpsService): string {
+  const company = service.company_name?.trim() || "—";
+  const type = service.service_type?.trim() || "—";
+  const age = service.operational_flags?.age_min;
+  const agePart =
+    age != null && Number.isFinite(age) ? `${age} min` : "—";
+  return `${company} · ${type} · ${agePart}`;
 }
 
 function isGhostMessenger(m: OpsMapMessenger): boolean {
@@ -383,7 +435,7 @@ function clearMarker(
   (marker as google.maps.marker.AdvancedMarkerElement).map = null;
 }
 
-function detachMarker(entry: MapMarkerEntry): void {
+function detachMarker(entry: MapMarkerEntry | RequestedMarkerEntry): void {
   clearMarker(entry.marker);
 }
 
@@ -800,11 +852,143 @@ function createMapMarker(
 }
 
 function bindMarkerClick(
-  entry: MapMarkerEntry,
+  entry: { marker: google.maps.marker.AdvancedMarkerElement | google.maps.Marker },
   onClick: () => void,
 ): void {
   const target = entry.marker as google.maps.MVCObject;
   target.addListener("click", onClick);
+}
+
+function setRequestedMarkerPosition(
+  entry: RequestedMarkerEntry,
+  position: google.maps.LatLngLiteral,
+): void {
+  if (entry.kind === "advanced") {
+    (entry.marker as google.maps.marker.AdvancedMarkerElement).position =
+      position;
+  } else {
+    (entry.marker as google.maps.Marker).setPosition(position);
+  }
+}
+
+function createRequestedMarker(
+  map: google.maps.Map,
+  position: google.maps.LatLngLiteral,
+  title: string,
+  alertLevel: RequestedStuckLevel,
+  useAdvanced: boolean,
+): RequestedMarkerEntry {
+  const color = REQUESTED_PIN_COLORS[alertLevel];
+
+  if (useAdvanced) {
+    const content = createServicePinElement("R", color);
+    const marker = new window.google!.maps!.marker!.AdvancedMarkerElement({
+      map,
+      position,
+      title,
+      content,
+      zIndex: 5000,
+    });
+    return { marker, kind: "advanced", alertLevel };
+  }
+
+  const marker = new google.maps.Marker({
+    map,
+    position,
+    title,
+    zIndex: 5000,
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 9,
+      fillColor: color,
+      fillOpacity: 1,
+      strokeColor: "#ffffff",
+      strokeWeight: 2,
+    },
+  });
+  return { marker, kind: "classic", alertLevel };
+}
+
+function syncRequestedMarkers(
+  map: google.maps.Map,
+  visibleRequested: RequestedOpsService[],
+  markersRef: React.MutableRefObject<Map<string, RequestedMarkerEntry>>,
+  useAdvancedRef: React.MutableRefObject<boolean | null>,
+  onMarkerClick: (serviceId: string) => void,
+): void {
+  if (useAdvancedRef.current === null) {
+    useAdvancedRef.current = canUseAdvancedMarkers();
+  }
+  const useAdvanced = useAdvancedRef.current === true;
+
+  const nextIds = new Set<string>();
+
+  for (const service of visibleRequested) {
+    if (!getRequestedMapPosition(service)) continue;
+    nextIds.add(service.service_id);
+  }
+
+  const idsToRemove: string[] = [];
+  markersRef.current.forEach((entry, id) => {
+    if (!nextIds.has(id)) {
+      detachMarker(entry);
+      idsToRemove.push(id);
+    }
+  });
+  for (const id of idsToRemove) {
+    markersRef.current.delete(id);
+  }
+
+  for (const service of visibleRequested) {
+    const position = getRequestedMapPosition(service);
+    if (!position) continue;
+
+    const alertLevel = getRequestedStuckLevel(service);
+    const existing = markersRef.current.get(service.service_id);
+
+    if (existing && existing.alertLevel === alertLevel) {
+      setRequestedMarkerPosition(existing, position);
+      continue;
+    }
+
+    if (existing) {
+      detachMarker(existing);
+      markersRef.current.delete(service.service_id);
+    }
+
+    const title = getRequestedMarkerTitle(service);
+
+    try {
+      const entry = createRequestedMarker(
+        map,
+        position,
+        title,
+        alertLevel,
+        useAdvanced,
+      );
+      bindMarkerClick(entry, () => onMarkerClick(service.service_id));
+      markersRef.current.set(service.service_id, entry);
+    } catch (err) {
+      if (useAdvanced) {
+        useAdvancedRef.current = false;
+        try {
+          const entry = createRequestedMarker(
+            map,
+            position,
+            title,
+            alertLevel,
+            false,
+          );
+          bindMarkerClick(entry, () => onMarkerClick(service.service_id));
+          markersRef.current.set(service.service_id, entry);
+        } catch {
+          console.warn("[ops-map] requested marker create failed", err);
+        }
+      } else {
+        console.warn("[ops-map] requested marker create failed", err);
+      }
+    }
+  }
 }
 
 function syncOpsMarkers(
@@ -1098,16 +1282,102 @@ function MessengerRow({
   );
 }
 
+function RequestedServicePanel({
+  service,
+  onClose,
+  onRecenter,
+}: {
+  service: RequestedOpsService;
+  onClose: () => void;
+  onRecenter: () => void;
+}) {
+  const flags = service.operational_flags;
+  const alertLevel = getRequestedStuckLevel(service);
+  const hasCoords = getRequestedMapPosition(service) != null;
+
+  return (
+    <Card className="border border-gray-200 shadow-lg bg-white/98">
+      <CardHeader className="pb-2 space-y-0">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <CardTitle className="text-base text-[#1E3A5F] truncate">
+              {displayText(service.service_short)}
+            </CardTitle>
+            <p className="text-xs font-mono text-gray-500 mt-0.5 truncate">
+              {service.service_id}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="shrink-0 h-8 w-8"
+            onClick={onClose}
+            aria-label="Cerrar panel"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        <Badge
+          variant="outline"
+          className="text-xs w-fit mt-2 bg-slate-100 text-slate-800 border-slate-200"
+        >
+          REQUESTED
+        </Badge>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-0 text-sm">
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <DetailField label="Empresa" value={displayText(service.company_name)} />
+          <DetailField label="Tipo" value={displayText(service.service_type)} />
+          <DetailField
+            label="Edad (min)"
+            value={displayText(flags?.age_min)}
+          />
+          <DetailField
+            label="Stuck level"
+            value={displayText(flags?.stuck_level ?? alertLevel)}
+          />
+        </div>
+        <div className="space-y-1 text-xs">
+          <p className="text-gray-500">Origen</p>
+          <p className="text-gray-800">{displayText(service.origin?.label)}</p>
+          <p className="text-gray-500 mt-2">Destino</p>
+          <p className="text-gray-800">
+            {displayText(service.destination?.label)}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full"
+          disabled={!hasCoords}
+          onClick={onRecenter}
+        >
+          Recentrar en mapa
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function AdminOpsMapPage() {
   const [messengers, setMessengers] = useState<OpsMapMessenger[]>([]);
+  const [requestedServices, setRequestedServices] = useState<RequestedOpsService[]>(
+    [],
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showOffline, setShowOffline] = useState(false);
   const [showGhost, setShowGhost] = useState(false);
+  const [showRequested, setShowRequested] = useState(true);
   const [mapReady, setMapReady] = useState(false);
   const [selectedMessengerId, setSelectedMessengerId] = useState<string | null>(
+    null,
+  );
+  const [selectedRequestedId, setSelectedRequestedId] = useState<string | null>(
     null,
   );
   const [serviceDetailOpen, setServiceDetailOpen] = useState(false);
@@ -1122,6 +1392,7 @@ export default function AdminOpsMapPage() {
   const loadInFlightRef = useRef(false);
   const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<Map<string, MapMarkerEntry>>(new Map());
+  const requestedMarkersRef = useRef<Map<string, RequestedMarkerEntry>>(new Map());
   const serviceOverlayRef = useRef<ServiceOverlayState>({
     origin: null,
     destination: null,
@@ -1148,6 +1419,7 @@ export default function AdminOpsMapPage() {
     try {
       const data = await getAdminOpsMapSnapshot({ limit: 200 });
       setMessengers(data.messengers);
+      setRequestedServices(data.requested_services);
       setError(null);
       setLastUpdatedAt(new Date());
     } catch (e: unknown) {
@@ -1190,6 +1462,11 @@ export default function AdminOpsMapPage() {
     [messengers],
   );
 
+  const visibleRequestedServices = useMemo(() => {
+    if (!showRequested) return [];
+    return requestedServices.filter((s) => getRequestedMapPosition(s) != null);
+  }, [requestedServices, showRequested]);
+
   const counters = useMemo(
     () => ({
       total: visibleMessengers.length,
@@ -1200,8 +1477,9 @@ export default function AdminOpsMapPage() {
       offlineHidden: showOffline
         ? countByState(visibleMessengers, "OFFLINE")
         : offlineHiddenCount,
+      requested: requestedServices.length,
     }),
-    [visibleMessengers, showOffline, offlineHiddenCount],
+    [visibleMessengers, showOffline, offlineHiddenCount, requestedServices],
   );
 
   const mapMarkersCount = useMemo(
@@ -1216,7 +1494,16 @@ export default function AdminOpsMapPage() {
     );
   }, [messengers, selectedMessengerId]);
 
+  const selectedRequested = useMemo(() => {
+    if (!selectedRequestedId) return null;
+    return (
+      requestedServices.find((s) => s.service_id === selectedRequestedId) ??
+      null
+    );
+  }, [requestedServices, selectedRequestedId]);
+
   const handleSelectMessenger = useCallback((id: string | null) => {
+    setSelectedRequestedId(null);
     setSelectedMessengerId((prev) => {
       if (id === null) return null;
       const nextId = prev === id ? null : id;
@@ -1238,6 +1525,19 @@ export default function AdminOpsMapPage() {
     },
     [handleSelectMessenger],
   );
+
+  const handleRequestedClick = useCallback((serviceId: string) => {
+    setSelectedMessengerId(null);
+    setSelectedRequestedId((prev) => (prev === serviceId ? null : serviceId));
+  }, []);
+
+  const handleRecenterRequested = useCallback((service: RequestedOpsService) => {
+    const position = getRequestedMapPosition(service);
+    const map = mapRef.current;
+    if (!position || !map) return;
+    map.panTo(position);
+    map.setZoom(15);
+  }, []);
 
   const handleRecenterMessenger = useCallback((messenger: OpsMapMessenger) => {
     if (!hasValidCoords(messenger)) return;
@@ -1335,6 +1635,19 @@ export default function AdminOpsMapPage() {
     const map = mapRef.current;
     if (!mapReady || !map) return;
 
+    syncRequestedMarkers(
+      map,
+      visibleRequestedServices,
+      requestedMarkersRef,
+      useAdvancedMarkersRef,
+      handleRequestedClick,
+    );
+  }, [mapReady, visibleRequestedServices, handleRequestedClick]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+
     clearAllServiceVisuals(
       serviceOverlayRef,
       servicePolylineRef,
@@ -1368,6 +1681,10 @@ export default function AdminOpsMapPage() {
         detachMarker(entry);
       });
       markersRef.current.clear();
+      requestedMarkersRef.current.forEach((entry) => {
+        detachMarker(entry);
+      });
+      requestedMarkersRef.current.clear();
       mapRef.current = null;
     };
   }, []);
@@ -1419,6 +1736,16 @@ export default function AdminOpsMapPage() {
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant={showRequested ? "secondary" : "outline"}
+              size="sm"
+              onClick={() => setShowRequested((v) => !v)}
+            >
+              {showRequested
+                ? "Ocultar solicitados"
+                : `Mostrar solicitados (${requestedServices.length})`}
+            </Button>
             <Button
               type="button"
               variant={showGhost ? "secondary" : "outline"}
@@ -1483,6 +1810,26 @@ export default function AdminOpsMapPage() {
                   <span className="text-gray-700">{item.label}</span>
                 </div>
               ))}
+              {showRequested ? (
+                <>
+                  <p className="font-semibold text-[#1E3A5F] mt-2 mb-0.5">
+                    Solicitados
+                  </p>
+                  {REQUESTED_LEGEND_ITEMS.map((item) => (
+                    <div key={item.level} className="flex items-center gap-2">
+                      <span
+                        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-white text-[8px] font-extrabold text-white shadow-sm"
+                        style={{
+                          backgroundColor: REQUESTED_PIN_COLORS[item.level],
+                        }}
+                      >
+                        R
+                      </span>
+                      <span className="text-gray-700">{item.label}</span>
+                    </div>
+                  ))}
+                </>
+              ) : null}
             </div>
           </div>
 
@@ -1492,7 +1839,26 @@ export default function AdminOpsMapPage() {
             </div>
           ) : null}
 
-          {selectedMessenger && !serviceDetailOpen ? (
+          {selectedRequested && !serviceDetailOpen ? (
+            <>
+              <div className="hidden md:block absolute top-2 right-2 z-20 w-80 max-h-[calc(100%-1rem)] overflow-auto pointer-events-auto">
+                <RequestedServicePanel
+                  service={selectedRequested}
+                  onClose={() => setSelectedRequestedId(null)}
+                  onRecenter={() => handleRecenterRequested(selectedRequested)}
+                />
+              </div>
+              <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 max-h-[40vh] overflow-auto rounded-t-xl border-t border-gray-200 bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.12)] pointer-events-auto">
+                <RequestedServicePanel
+                  service={selectedRequested}
+                  onClose={() => setSelectedRequestedId(null)}
+                  onRecenter={() => handleRecenterRequested(selectedRequested)}
+                />
+              </div>
+            </>
+          ) : null}
+
+          {selectedMessenger && !serviceDetailOpen && !selectedRequested ? (
             <>
               <div className="hidden md:block absolute top-2 right-2 z-20 w-80 max-h-[calc(100%-1rem)] overflow-auto pointer-events-auto">
                 <MessengerOpsPanel
@@ -1524,7 +1890,7 @@ export default function AdminOpsMapPage() {
           ) : null}
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
           <Card className="border-0 shadow-sm">
             <CardContent className="p-3 text-center">
               <p className="text-xs text-gray-500">Visibles</p>
@@ -1561,6 +1927,12 @@ export default function AdminOpsMapPage() {
                 {showOffline ? "Offline" : "Offline ocultos"}
               </p>
               <p className="text-xl font-bold text-gray-600">{counters.offlineHidden}</p>
+            </CardContent>
+          </Card>
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-3 text-center">
+              <p className="text-xs text-gray-500">Solicitados</p>
+              <p className="text-xl font-bold text-red-600">{counters.requested}</p>
             </CardContent>
           </Card>
         </div>
