@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { List, Map as MapIcon, RefreshCw, WifiOff } from "lucide-react";
+import { List, RefreshCw, Wifi, WifiOff, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const POLL_INTERVAL_MS = 30_000;
@@ -271,14 +271,137 @@ function syncOpsMarkers(
   return validPoints;
 }
 
+function MessengerOpsPanel({
+  messenger,
+  lastUpdatedAt,
+  onClose,
+}: {
+  messenger: OpsMapMessenger;
+  lastUpdatedAt: Date | null;
+  onClose: () => void;
+}) {
+  const name = getMessengerDisplayName(messenger);
+  const signalStale = messenger.is_online === false;
+  const hasCoords = hasValidCoords(messenger);
+
+  return (
+    <Card className="border border-gray-200 shadow-lg bg-white/98">
+      <CardHeader className="pb-2 space-y-0">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <CardTitle className="text-base text-[#1E3A5F] truncate">{name}</CardTitle>
+            {messenger.phone ? (
+              <p className="text-xs text-gray-500 mt-0.5">{messenger.phone}</p>
+            ) : null}
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="shrink-0 h-8 w-8"
+            onClick={onClose}
+            aria-label="Cerrar panel"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        <Badge
+          variant="outline"
+          className={`text-xs w-fit mt-2 ${opsStateBadgeClass(messenger.ops_state)}`}
+        >
+          {OPS_STATE_LABELS[messenger.ops_state]}
+        </Badge>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm pt-0">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Señal</p>
+          {signalStale ? (
+            <p className="text-xs text-amber-700 flex items-center gap-1">
+              <WifiOff className="h-3.5 w-3.5 shrink-0" />
+              Señal vencida
+            </p>
+          ) : messenger.is_online === true ? (
+            <p className="text-xs text-green-700 flex items-center gap-1">
+              <Wifi className="h-3.5 w-3.5 shrink-0" />
+              En línea
+            </p>
+          ) : (
+            <p className="text-xs text-gray-500">Sin dato de señal</p>
+          )}
+        </div>
+
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Última ubicación</p>
+          {hasCoords ? (
+            <p className="text-xs font-mono text-gray-700">
+              {messenger.lat!.toFixed(5)}, {messenger.lng!.toFixed(5)}
+            </p>
+          ) : (
+            <p className="text-xs text-gray-400">Sin coordenadas</p>
+          )}
+        </div>
+
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Placa</p>
+          <p className="text-xs font-mono text-gray-700">
+            {messenger.plate?.trim() || "—"}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Servicio activo</p>
+          {messenger.active_service ? (
+            <p className="text-xs text-gray-700">
+              <span
+                className="font-mono font-medium text-[#1E3A5F]"
+                title={messenger.active_service.service_id}
+              >
+                {truncateId(messenger.active_service.service_id)}
+              </span>
+              <span className="text-gray-500">
+                {" "}
+                · {messenger.active_service.status}
+              </span>
+            </p>
+          ) : (
+            <p className="text-xs text-gray-400">Sin servicio activo</p>
+          )}
+        </div>
+
+        {lastUpdatedAt ? (
+          <p className="text-xs text-gray-400 pt-1 border-t border-gray-100">
+            Última actualización:{" "}
+            {lastUpdatedAt.toLocaleTimeString("es-CO", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            })}
+          </p>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button type="button" variant="outline" size="sm" disabled>
+            Recentrar
+          </Button>
+          <Button type="button" variant="outline" size="sm" disabled>
+            Abrir servicio
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function MessengerRow({
   messenger,
   selected,
   rowRef,
+  onSelect,
 }: {
   messenger: OpsMapMessenger;
   selected: boolean;
   rowRef: (el: HTMLDivElement | null) => void;
+  onSelect: (messengerId: string) => void;
 }) {
   const name = getMessengerDisplayName(messenger);
   const signalStale = messenger.is_online === false;
@@ -286,9 +409,18 @@ function MessengerRow({
   return (
     <div
       ref={rowRef}
+      role="button"
+      tabIndex={0}
       data-messenger-id={messenger.messenger_id}
+      onClick={() => onSelect(messenger.messenger_id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(messenger.messenger_id);
+        }
+      }}
       className={cn(
-        "rounded-lg border bg-gray-50/80 p-4 space-y-2 transition-shadow",
+        "rounded-lg border bg-gray-50/80 p-4 space-y-2 transition-shadow cursor-pointer",
         selected
           ? "border-[#1E3A5F] ring-2 ring-[#1E3A5F]/30 shadow-md"
           : "border-gray-100",
@@ -432,13 +564,35 @@ export default function AdminOpsMapPage() {
     [visibleMessengers],
   );
 
-  const handleMarkerClick = useCallback((messengerId: string) => {
-    setSelectedMessengerId(messengerId);
-    const rowEl = rowRefsRef.current[messengerId];
-    if (rowEl) {
-      rowEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
+  const selectedMessenger = useMemo(() => {
+    if (!selectedMessengerId) return null;
+    return (
+      messengers.find((m) => m.messenger_id === selectedMessengerId) ?? null
+    );
+  }, [messengers, selectedMessengerId]);
+
+  const handleSelectMessenger = useCallback((id: string | null) => {
+    setSelectedMessengerId((prev) => {
+      if (id === null) return null;
+      const nextId = prev === id ? null : id;
+      if (nextId !== null) {
+        requestAnimationFrame(() => {
+          rowRefsRef.current[nextId]?.scrollIntoView({
+            behavior: "smooth",
+            block: "nearest",
+          });
+        });
+      }
+      return nextId;
+    });
   }, []);
+
+  const handleMarkerClick = useCallback(
+    (messengerId: string) => {
+      handleSelectMessenger(messengerId);
+    },
+    [handleSelectMessenger],
+  );
 
   const handleMapReady = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
@@ -580,6 +734,25 @@ export default function AdminOpsMapPage() {
               ))}
             </div>
           </div>
+
+          {selectedMessenger ? (
+            <>
+              <div className="hidden md:block absolute top-2 right-2 z-20 w-80 max-h-[calc(100%-1rem)] overflow-auto pointer-events-auto">
+                <MessengerOpsPanel
+                  messenger={selectedMessenger}
+                  lastUpdatedAt={lastUpdatedAt}
+                  onClose={() => handleSelectMessenger(null)}
+                />
+              </div>
+              <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 max-h-[40vh] overflow-auto rounded-t-xl border-t border-gray-200 bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.12)] pointer-events-auto">
+                <MessengerOpsPanel
+                  messenger={selectedMessenger}
+                  lastUpdatedAt={lastUpdatedAt}
+                  onClose={() => handleSelectMessenger(null)}
+                />
+              </div>
+            </>
+          ) : null}
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
@@ -660,6 +833,7 @@ export default function AdminOpsMapPage() {
                     messenger={m}
                     selected={selectedMessengerId === m.messenger_id}
                     rowRef={setRowRef(m.messenger_id)}
+                    onSelect={handleSelectMessenger}
                   />
                 ))}
               </div>
