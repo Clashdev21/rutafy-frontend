@@ -25,6 +25,7 @@ import {
   Building2,
   Home,
   LogOut,
+  Map,
   MapPin,
   Package,
   PanelLeft,
@@ -45,6 +46,7 @@ const menuItems = [
   { icon: MapPin, label: "Nodos", path: "/admin/nodes" },
   { icon: TriangleAlert, label: "Alertas", path: "/admin/alerts" },
   { icon: Package, label: "Mensajeros", path: "/admin/mensajeros" },
+  { icon: Map, label: "Mapa ops", path: "/admin/ops/map" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "admin-sidebar-width";

@@ -31,6 +31,7 @@ import { toast } from "sonner";
 
 type Service = {
   id: number;
+  service_id?: string | null;
   customerId: number;
   driverId: number | null;
   companyId: number | null;
@@ -70,6 +71,27 @@ const serviceTypeLabels = {
   MESSAGING: "Mensajería",
   TRANSPORT: "Transporte",
 };
+
+function getServiceIdFromSearch(): string | null {
+  if (typeof window === "undefined") return null;
+  const value = new URLSearchParams(window.location.search).get("service_id");
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function serviceMatchesUrlId(service: Service, queryId: string): boolean {
+  const q = queryId.trim();
+  const qLower = q.toLowerCase();
+  if (
+    service.service_id != null &&
+    String(service.service_id).trim().toLowerCase() === qLower
+  ) {
+    return true;
+  }
+  if (String(service.id) === q) return true;
+  if (String(service.id).toLowerCase() === qLower) return true;
+  return false;
+}
 
 export default function AdminServicesPage() {
   const utils = trpc.useUtils();
@@ -127,9 +149,23 @@ export default function AdminServicesPage() {
     setIsDeleteOpen(true);
   };
 
-  const filteredServices = statusFilter === "all"
-    ? services
-    : services.filter(s => s.status === statusFilter);
+  const urlServiceId = getServiceIdFromSearch();
+
+  const statusFilteredServices =
+    statusFilter === "all"
+      ? services
+      : services.filter((s) => s.status === statusFilter);
+
+  const filteredServices = urlServiceId
+    ? statusFilteredServices.filter((s) => serviceMatchesUrlId(s, urlServiceId))
+    : statusFilteredServices;
+
+  const notFoundByUrlFilter =
+    Boolean(urlServiceId) && !isLoading && filteredServices.length === 0;
+
+  const clearServiceIdFilter = () => {
+    window.location.href = "/admin/services";
+  };
 
   return (
     <AdminLayout>
@@ -156,6 +192,23 @@ export default function AdminServicesPage() {
           </div>
         </div>
 
+        {urlServiceId ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-[#1E3A5F]">
+            <p>
+              Filtrando por servicio:{" "}
+              <span className="font-mono font-medium break-all">{urlServiceId}</span>
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={clearServiceIdFilter}
+            >
+              Limpiar filtro
+            </Button>
+          </div>
+        ) : null}
+
         {/* Table */}
         <Card className="border-0 shadow-sm">
           <CardHeader>
@@ -167,6 +220,10 @@ export default function AdminServicesPage() {
           <CardContent>
             {isLoading ? (
               <div className="text-center py-8 text-gray-400">Cargando...</div>
+            ) : notFoundByUrlFilter ? (
+              <div className="text-center py-8 text-gray-500">
+                No se encontró este servicio en el listado actual.
+              </div>
             ) : filteredServices.length === 0 ? (
               <div className="text-center py-8 text-gray-400">
                 No hay servicios registrados

@@ -462,7 +462,7 @@ export function useMessengerOperationalState() {
   const refreshAvailableServicesRef = useRef(refreshAvailableServices);
   refreshAvailableServicesRef.current = refreshAvailableServices;
 
-  const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const heartbeatTimerRef = useRef<number | null>(null);
   const lastHeartbeatLatRef = useRef<number | null>(null);
   const lastHeartbeatLngRef = useRef<number | null>(null);
   const uiStateRef = useRef<UiState>("OFFLINE");

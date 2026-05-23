@@ -88,11 +88,44 @@ declare global {
   }
 }
 
-const API_KEY = import.meta.env.VITE_FRONTEND_FORGE_API_KEY;
+const FORGE_KEY_PLACEHOLDER = "TU_FORGE_API_KEY_REAL";
 const FORGE_BASE_URL =
   import.meta.env.VITE_FRONTEND_FORGE_API_URL ||
   "https://forge.butterfly-effect.dev";
 const MAPS_PROXY_URL = `${FORGE_BASE_URL}/v1/maps/proxy`;
+const MAP_SCRIPT_PARAMS =
+  "v=weekly&libraries=marker,places,geocoding,geometry";
+const MAP_ID =
+  (typeof import.meta.env.VITE_GOOGLE_MAP_ID === "string" &&
+    import.meta.env.VITE_GOOGLE_MAP_ID.trim()) ||
+  "DEMO_MAP_ID";
+
+function isValidForgeKey(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed !== FORGE_KEY_PLACEHOLDER;
+}
+
+function getGoogleMapsApiKey(): string | null {
+  const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (typeof key !== "string") return null;
+  const trimmed = key.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function getMapsScriptUrl(): string {
+  const forgeKey = import.meta.env.VITE_FRONTEND_FORGE_API_KEY;
+  if (isValidForgeKey(forgeKey)) {
+    return `${MAPS_PROXY_URL}/maps/api/js?key=${encodeURIComponent(forgeKey.trim())}&${MAP_SCRIPT_PARAMS}`;
+  }
+
+  const googleKey = getGoogleMapsApiKey();
+  if (googleKey) {
+    return `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleKey)}&${MAP_SCRIPT_PARAMS}`;
+  }
+
+  throw new Error("Missing Forge or Google Maps API key");
+}
 
 /**
  * Singleton pattern to load Google Maps script only once
@@ -119,9 +152,16 @@ function loadMapScript(): Promise<void> {
   }
 
   // Start loading
+  let scriptUrl: string;
+  try {
+    scriptUrl = getMapsScriptUrl();
+  } catch (err) {
+    return Promise.reject(err);
+  }
+
   window.__googleMapsLoading = new Promise<void>((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry`;
+    script.src = scriptUrl;
     script.async = true;
     script.crossOrigin = "anonymous";
     script.id = "google-maps-script";
@@ -185,7 +225,7 @@ export function MapView({
         fullscreenControl: true,
         zoomControl: true,
         streetViewControl: true,
-        mapId: "DEMO_MAP_ID",
+        mapId: MAP_ID,
       });
       
       if (onMapReady) {
