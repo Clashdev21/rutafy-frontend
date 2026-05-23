@@ -4,7 +4,7 @@ import {
   acceptServiceOffer,
   getActiveOffersByMessenger,
   patchMessengerAvailability,
-  patchMessengerLocation,
+  postMessengerHeartbeat,
 } from "@/api/services";
 import { getToken } from "@/authStorage";
 import { buildMessengerRealtimeWebSocketUrl } from "@/lib/messengerRealtimeWs";
@@ -149,7 +149,32 @@ export function isValidUuid(value: string): boolean {
   );
 }
 
-const MESSENGER_LOCATION_MIN_INTERVAL_MS = 15_000;
+const MESSENGER_HEARTBEAT_INTERVAL_MS = 30_000;
+
+function resolveHeartbeatAvailability(
+  isOnline: boolean,
+): "AVAILABLE" | "OFFLINE" {
+  return isOnline ? "AVAILABLE" : "OFFLINE";
+}
+
+async function readBatteryLevel(): Promise<number | null> {
+  try {
+    if (typeof navigator === "undefined") return null;
+    const getBattery = (
+      navigator as Navigator & {
+        getBattery?: () => Promise<{ level?: number }>;
+      }
+    ).getBattery;
+    if (typeof getBattery !== "function") return null;
+    const battery = await getBattery.call(navigator);
+    const level = battery?.level;
+    if (typeof level !== "number" || !Number.isFinite(level)) return null;
+    if (level > 1) return level;
+    return level * 100;
+  } catch {
+    return null;
+  }
+}
 
 export function buildAbsoluteUrl(fileUrl?: string | null): string | null {
   if (!fileUrl) return null;
@@ -433,7 +458,9 @@ export function useMessengerOperationalState() {
   const refreshAvailableServicesRef = useRef(refreshAvailableServices);
   refreshAvailableServicesRef.current = refreshAvailableServices;
 
-  const lastLocationSentAtRef = useRef(0);
+  const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastHeartbeatLatRef = useRef<number | null>(null);
+  const lastHeartbeatLngRef = useRef<number | null>(null);
   const locationWatchIdRef = useRef<number | null>(null);
 
   const loadServiceEvidences = useCallback(async (serviceId: string, silent = false) => {
@@ -541,14 +568,10 @@ export function useMessengerOperationalState() {
     const onSuccess = (position: GeolocationPosition) => {
       const lat = position.coords.latitude;
       const lng = position.coords.longitude;
-      const now = Date.now();
-      if (now - lastLocationSentAtRef.current < MESSENGER_LOCATION_MIN_INTERVAL_MS) {
-        return;
-      }
-      lastLocationSentAtRef.current = now;
-      void patchMessengerLocation(actorId, { lat, lng }).catch((err: unknown) => {
-        console.warn("[messenger-location]", err);
-      });
+      lastHeartbeatLatRef.current = lat;
+      lastHeartbeatLngRef.current = lng;
+      setCurrentLat(lat);
+      setCurrentLng(lng);
     };
 
     const onError = (error: GeolocationPositionError) => {
@@ -563,6 +586,81 @@ export function useMessengerOperationalState() {
 
     return () => {
       clearLocationWatch();
+    };
+  }, [loading, isOnline, actorId, user]);
+
+  useEffect(() => {
+    const clearHeartbeatTimer = () => {
+      if (heartbeatTimerRef.current != null) {
+        window.clearInterval(heartbeatTimerRef.current);
+        heartbeatTimerRef.current = null;
+      }
+    };
+
+    if (typeof window === "undefined") {
+      return () => {
+        clearHeartbeatTimer();
+      };
+    }
+
+    if (
+      loading ||
+      !user ||
+      user.appRole !== "MENSAJERO" ||
+      !isOnline ||
+      !actorId ||
+      !isValidUuid(actorId)
+    ) {
+      clearHeartbeatTimer();
+      return () => {
+        clearHeartbeatTimer();
+      };
+    }
+
+    const token = getToken();
+    if (!token) {
+      clearHeartbeatTimer();
+      return () => {
+        clearHeartbeatTimer();
+      };
+    }
+
+    const sendHeartbeat = async () => {
+      try {
+        const battery_level = await readBatteryLevel();
+        const payload: Parameters<typeof postMessengerHeartbeat>[0] = {
+          availability_status: resolveHeartbeatAvailability(isOnline),
+        };
+
+        const lat = lastHeartbeatLatRef.current;
+        const lng = lastHeartbeatLngRef.current;
+        if (
+          lat != null &&
+          lng != null &&
+          Number.isFinite(lat) &&
+          Number.isFinite(lng)
+        ) {
+          payload.lat = lat;
+          payload.lng = lng;
+        }
+
+        if (battery_level != null) {
+          payload.battery_level = battery_level;
+        }
+
+        await postMessengerHeartbeat(payload);
+      } catch (err: unknown) {
+        console.warn("[messenger-heartbeat]", err);
+      }
+    };
+
+    void sendHeartbeat();
+    heartbeatTimerRef.current = window.setInterval(() => {
+      void sendHeartbeat();
+    }, MESSENGER_HEARTBEAT_INTERVAL_MS);
+
+    return () => {
+      clearHeartbeatTimer();
     };
   }, [loading, isOnline, actorId, user]);
 

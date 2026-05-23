@@ -71,3 +71,15 @@ export async function patchMessengerLocation(
   );
   return data;
 }
+
+export type MessengerHeartbeatPayload = {
+  lat?: number;
+  lng?: number;
+  availability_status?: "AVAILABLE" | "OFFLINE";
+  battery_level?: number | null;
+};
+
+export async function postMessengerHeartbeat(payload: MessengerHeartbeatPayload) {
+  const { data } = await http.post("/v1/mensajero/heartbeat", payload);
+  return data;
+}
