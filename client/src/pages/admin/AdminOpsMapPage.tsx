@@ -12,6 +12,8 @@ import {
 } from "@/api/admin-ops-service";
 import AdminLayout from "@/components/AdminLayout";
 import { MapView } from "@/components/Map";
+import { OperationalLocationDisplay } from "@/components/OperationalLocationDisplay";
+import { formatOperationalLocationBlock } from "@/lib/formatOperationalLocation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -201,21 +203,6 @@ function formatDateTime(value: string | null | undefined): string {
   });
 }
 
-function formatLocationBlock(loc: OpsServiceLocation | null | undefined): string {
-  if (!loc) return "—";
-  const label = loc.label?.trim();
-  const nodePart =
-    loc.node?.name?.trim() || loc.node?.code?.trim() || loc.node?.node_id?.trim();
-  const lat = loc.lat;
-  const lng = loc.lng;
-  const coords =
-    lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)
-      ? `${lat.toFixed(5)}, ${lng.toFixed(5)}`
-      : null;
-  const parts = [label, nodePart, coords].filter(Boolean);
-  return parts.length > 0 ? parts.join(" · ") : "—";
-}
-
 function formatTimelineEventTitle(ev: OpsServiceTimelineEvent): string {
   if (ev.from_status && ev.to_status) {
     return `${ev.from_status} → ${ev.to_status}`;
@@ -299,10 +286,13 @@ function OpsServiceDetailDialog({
 
             <div className="space-y-2 rounded-lg border border-gray-100 bg-gray-50/80 p-3">
               <p className="text-xs font-semibold text-[#1E3A5F]">Ruta</p>
-              <DetailField label="Origen" value={formatLocationBlock(detail.origin)} />
+              <DetailField
+                label="Origen"
+                value={formatOperationalLocationBlock(detail.origin)}
+              />
               <DetailField
                 label="Destino"
-                value={formatLocationBlock(detail.destination)}
+                value={formatOperationalLocationBlock(detail.destination)}
               />
             </div>
 
@@ -1338,13 +1328,15 @@ function RequestedServicePanel({
             value={displayText(flags?.stuck_level ?? alertLevel)}
           />
         </div>
-        <div className="space-y-1 text-xs">
-          <p className="text-gray-500">Origen</p>
-          <p className="text-gray-800">{displayText(service.origin?.label)}</p>
-          <p className="text-gray-500 mt-2">Destino</p>
-          <p className="text-gray-800">
-            {displayText(service.destination?.label)}
-          </p>
+        <div className="space-y-3 text-xs">
+          <div>
+            <p className="text-gray-500 mb-0.5">Origen</p>
+            <OperationalLocationDisplay location={service.origin} />
+          </div>
+          <div>
+            <p className="text-gray-500 mb-0.5">Destino</p>
+            <OperationalLocationDisplay location={service.destination} />
+          </div>
         </div>
         <Button
           type="button"

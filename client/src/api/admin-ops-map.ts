@@ -130,10 +130,11 @@ function normalizeLocation(raw: unknown): OpsServiceLocation | null {
   if (!raw || typeof raw !== "object") return null;
   const rec = raw as Record<string, unknown>;
   const label = pick(rec, "label", toOptionalString);
+  const sub_location = pick(rec, "sub_location", toOptionalString);
   const lat = pick(rec, "lat", toFiniteNumber);
   const lng = pick(rec, "lng", toFiniteNumber);
-  if (!label && lat == null && lng == null) return null;
-  return { label, lat, lng, node: null };
+  if (!label && !sub_location && lat == null && lng == null) return null;
+  return { label, sub_location, lat, lng, node: null };
 }
 
 function normalizeRequestedFlags(raw: unknown): RequestedOpsServiceFlags | null {

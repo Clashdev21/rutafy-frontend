@@ -6,6 +6,7 @@ export type OpsServiceNode = {
 
 export type OpsServiceLocation = {
   label?: string | null;
+  sub_location?: string | null;
   lat?: number | null;
   lng?: number | null;
   node?: OpsServiceNode | null;
@@ -154,11 +155,12 @@ function normalizeLocation(raw: unknown): OpsServiceLocation | null {
   if (!raw || typeof raw !== "object") return null;
   const rec = raw as Record<string, unknown>;
   const label = pick(rec, "label", toOptionalString);
+  const sub_location = pick(rec, "sub_location", toOptionalString);
   const lat = pick(rec, "lat", toFiniteNumber);
   const lng = pick(rec, "lng", toFiniteNumber);
   const node = normalizeNode(rec.node);
-  if (!label && lat == null && lng == null && !node) return null;
-  return { label, lat, lng, node };
+  if (!label && !sub_location && lat == null && lng == null && !node) return null;
+  return { label, sub_location, lat, lng, node };
 }
 
 function normalizeSla(raw: unknown): OpsServiceSla | null {

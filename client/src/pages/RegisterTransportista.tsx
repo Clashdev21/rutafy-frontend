@@ -28,6 +28,9 @@ export default function RegisterTransportista() {
   const [companyName, setCompanyName] = useState("");
   const [docNumber, setDocNumber] = useState("");
   const [email, setEmail] = useState("");
+  const [plate, setPlate] = useState("");
+  const [vehicleType, setVehicleType] = useState("");
+  const [vehicleReference, setVehicleReference] = useState("");
   const [isPending, setIsPending] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -68,6 +71,18 @@ export default function RegisterTransportista() {
       const emailTrim = email.trim();
       if (emailTrim) {
         body.email = emailTrim;
+      }
+      const plateTrim = plate.trim();
+      if (plateTrim) {
+        body.plate = plateTrim;
+      }
+      const vehicleTypeTrim = vehicleType.trim();
+      if (vehicleTypeTrim) {
+        body.vehicle_type = vehicleTypeTrim;
+      }
+      const vehicleReferenceTrim = vehicleReference.trim();
+      if (vehicleReferenceTrim) {
+        body.vehicle_reference = vehicleReferenceTrim;
       }
 
       const { data } = await http.post<RegisterTransportistaResponse>(
@@ -175,19 +190,19 @@ export default function RegisterTransportista() {
         >
           <Card className="border-0 shadow-2xl">
             <CardHeader className="text-center">
-              <CardTitle className="text-2xl text-[#1E3A5F]">Crear cuenta transportista</CardTitle>
+              <CardTitle className="text-2xl text-[#1E3A5F]">Crear cuenta operativa</CardTitle>
               <CardDescription>
-                Completa los datos para registrarte en Rutafy
+                Cuenta de empresa + vehículo con el que solicitarás mensajería
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="reg-name">Nombre</Label>
+                  <Label htmlFor="reg-name">Tu nombre (operador)</Label>
                   <Input
                     id="reg-name"
                     type="text"
-                    placeholder="Tu nombre"
+                    placeholder="Nombre del operador"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     disabled={isPending}
@@ -251,6 +266,43 @@ export default function RegisterTransportista() {
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={isPending}
                     autoComplete="email"
+                  />
+                </div>
+                <div className="space-y-2 pt-1 border-t border-gray-100">
+                  <p className="text-xs font-semibold text-[#1E3A5F]">Vehículo</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="reg-plate">Placa</Label>
+                  <Input
+                    id="reg-plate"
+                    type="text"
+                    placeholder="Ej: ABC123"
+                    value={plate}
+                    onChange={(e) => setPlate(e.target.value)}
+                    disabled={isPending}
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="reg-vehicle-type">Tipo de vehículo</Label>
+                  <Input
+                    id="reg-vehicle-type"
+                    type="text"
+                    placeholder="Ej: Moto, camión, van"
+                    value={vehicleType}
+                    onChange={(e) => setVehicleType(e.target.value)}
+                    disabled={isPending}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="reg-vehicle-ref">Referencia del vehículo (opcional)</Label>
+                  <Input
+                    id="reg-vehicle-ref"
+                    type="text"
+                    placeholder="Color, marca, alias interno"
+                    value={vehicleReference}
+                    onChange={(e) => setVehicleReference(e.target.value)}
+                    disabled={isPending}
                   />
                 </div>
                 <Button

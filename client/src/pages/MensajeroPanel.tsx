@@ -11,6 +11,8 @@ import {
   type ServiceEvidence,
   type ServiceStatus,
 } from "@/hooks/useMessengerOperationalState";
+import { OperationalParticipantCard } from "@/components/OperationalParticipantCard";
+import { formatServiceRouteEndpoint } from "@/lib/formatOperationalLocation";
 import {
   Package,
   MapPin,
@@ -52,30 +54,20 @@ function getServiceCode(service: BackendService): string {
 }
 
 function getOrigin(service: BackendService): string {
-  const meta = service.meta || {};
-  return (
-    service.origin ||
-    meta.origin ||
-    meta.origin_label ||
-    meta.originName ||
-    meta.pickup_address ||
-    meta.pickupAddress ||
-    meta.from ||
-    "Origen no definido"
+  return formatServiceRouteEndpoint(
+    service.origin,
+    service.meta ?? undefined,
+    "origin",
+    "Origen no definido",
   );
 }
 
 function getDestination(service: BackendService): string {
-  const meta = service.meta || {};
-  return (
-    service.destination ||
-    meta.destination ||
-    meta.destination_label ||
-    meta.destinationName ||
-    meta.dropoff_address ||
-    meta.dropoffAddress ||
-    meta.to ||
-    "Destino no definido"
+  return formatServiceRouteEndpoint(
+    service.destination,
+    service.meta ?? undefined,
+    "destination",
+    "Destino no definido",
   );
 }
 
@@ -335,6 +327,11 @@ function OfferView(props: {
             {getDestination(props.offer)}
           </p>
         </div>
+
+        <OperationalParticipantCard
+          title="Transportista / vehículo"
+          participant={props.offer.requester}
+        />
       </div>
 
       <div className="px-6 pb-8 pt-4 border-t border-gray-100 space-y-3">
@@ -380,16 +377,21 @@ function AssignedView(props: {
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Recoger en</p>
             <p className="mt-1 text-base font-medium text-gray-900">
-              {props.service.origin || "Origen no disponible"}
+              {getOrigin(props.service)}
             </p>
           </div>
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Entregar en</p>
             <p className="mt-1 text-base font-medium text-gray-900">
-              {props.service.destination || "Destino no disponible"}
+              {getDestination(props.service)}
             </p>
           </div>
         </div>
+
+        <OperationalParticipantCard
+          title="Transportista / vehículo"
+          participant={props.service.requester}
+        />
 
         {pickupSlaBreached ? (
           <p
@@ -460,16 +462,21 @@ function InServiceView(props: {
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Recoger en</p>
             <p className="mt-1 text-base font-medium text-gray-900">
-              {props.service.origin || "Origen no disponible"}
+              {getOrigin(props.service)}
             </p>
           </div>
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Entregar en</p>
             <p className="mt-1 text-base font-medium text-gray-900">
-              {props.service.destination || "Destino no disponible"}
+              {getDestination(props.service)}
             </p>
           </div>
         </div>
+
+        <OperationalParticipantCard
+          title="Transportista / vehículo"
+          participant={props.service.requester}
+        />
 
         {deliverySlaBreached ? (
           <p
@@ -959,6 +966,11 @@ export default function MensajeroPanel() {
                     <span className="font-medium text-gray-800">Destino:</span>{" "}
                     {getDestination(dispatchCurrentService)}
                   </p>
+                  <OperationalParticipantCard
+                    title="Transportista / vehículo"
+                    participant={dispatchCurrentService.requester}
+                    className="mt-2"
+                  />
                   <p className="text-sm">
                     <span className="font-medium text-gray-800">Estado:</span>{" "}
                     <span
@@ -1241,6 +1253,12 @@ export default function MensajeroPanel() {
                   <p className="font-medium text-gray-800 text-sm mt-1">{getDestination(activeService)}</p>
                 </div>
               </div>
+
+              <OperationalParticipantCard
+                title="Transportista / vehículo"
+                participant={activeService.requester}
+                className="mb-4"
+              />
 
               <div className="flex flex-wrap gap-2">
                 <Button

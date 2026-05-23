@@ -7,6 +7,16 @@ import {
   postMessengerHeartbeat,
 } from "@/api/services";
 import { getToken } from "@/authStorage";
+import {
+  formatLabelWithSubLocation,
+  formatOperationalLocation,
+  locationFromUnknown,
+  pickRouteSubLocation,
+} from "@/lib/formatOperationalLocation";
+import {
+  normalizeOperationalParticipant,
+  type OperationalParticipant,
+} from "@/lib/operationalParticipant";
 import { buildMessengerRealtimeWebSocketUrl } from "@/lib/messengerRealtimeWs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -40,6 +50,7 @@ export interface BackendService {
   expires_at?: string | null;
   created_at?: string;
   updated_at?: string;
+  requester?: OperationalParticipant | null;
 }
 
 type DispatchOfferLike = {
@@ -255,6 +266,31 @@ function mergeOfferMetas(
   return { ...root, ...inner };
 }
 
+function resolveRouteEndpoint(
+  nestedRec: Record<string, any> | null,
+  offerRec: Record<string, any>,
+  metaObj: Record<string, any> | null,
+  textKeys: readonly string[],
+  which: "origin" | "destination",
+): string | null {
+  const primaryRaw = nestedRec?.[which] ?? offerRec[which];
+  const fromObj = locationFromUnknown(primaryRaw);
+  if (fromObj) {
+    const formatted = formatOperationalLocation(fromObj);
+    if (formatted !== "—") return formatted;
+  }
+
+  const label =
+    pickFirstNonEmptyStringFromObject(nestedRec, textKeys) ??
+    pickFirstNonEmptyStringFromObject(offerRec, textKeys) ??
+    pickFirstNonEmptyStringFromObject(metaObj, textKeys) ??
+    (typeof primaryRaw === "string" ? primaryRaw.trim() || null : null);
+
+  const sub = pickRouteSubLocation(metaObj, which);
+  const combined = formatLabelWithSubLocation(label, sub, "");
+  return combined || null;
+}
+
 function resolveOfferOriginDestination(
   offer: DispatchOfferLike,
   nested: Partial<BackendService> | null,
@@ -265,19 +301,49 @@ function resolveOfferOriginDestination(
 
   const metaObj = mergedMeta && Object.keys(mergedMeta).length ? mergedMeta : null;
 
-  const origin =
-    pickFirstNonEmptyStringFromObject(nestedRec, OFFER_ORIGIN_TEXT_KEYS) ??
-    pickFirstNonEmptyStringFromObject(offerRec, OFFER_ORIGIN_TEXT_KEYS) ??
-    pickFirstNonEmptyStringFromObject(metaObj, OFFER_ORIGIN_TEXT_KEYS) ??
-    null;
+  const origin = resolveRouteEndpoint(
+    nestedRec,
+    offerRec,
+    metaObj,
+    OFFER_ORIGIN_TEXT_KEYS,
+    "origin",
+  );
 
-  const destination =
-    pickFirstNonEmptyStringFromObject(nestedRec, OFFER_DESTINATION_TEXT_KEYS) ??
-    pickFirstNonEmptyStringFromObject(offerRec, OFFER_DESTINATION_TEXT_KEYS) ??
-    pickFirstNonEmptyStringFromObject(metaObj, OFFER_DESTINATION_TEXT_KEYS) ??
-    null;
+  const destination = resolveRouteEndpoint(
+    nestedRec,
+    offerRec,
+    metaObj,
+    OFFER_DESTINATION_TEXT_KEYS,
+    "destination",
+  );
 
   return { origin, destination };
+}
+
+function resolveServiceRequester(
+  offer: DispatchOfferLike,
+  nested: Partial<BackendService> | null,
+): OperationalParticipant | null {
+  const nestedRec = nested as Record<string, unknown> | null;
+  const offerRec = offer as Record<string, unknown>;
+  const serviceRec =
+    offer.service && typeof offer.service === "object"
+      ? (offer.service as Record<string, unknown>)
+      : null;
+
+  return (
+    normalizeOperationalParticipant(nestedRec?.requester) ??
+    normalizeOperationalParticipant(offerRec.requester) ??
+    normalizeOperationalParticipant(serviceRec?.requester) ??
+    null
+  );
+}
+
+function enrichBackendService(service: BackendService): BackendService {
+  const rec = service as unknown as Record<string, unknown>;
+  const requester =
+    service.requester ?? normalizeOperationalParticipant(rec.requester) ?? null;
+  return requester ? { ...service, requester } : service;
 }
 
 function mapOfferToBackendService(offer: DispatchOfferLike): BackendService | null {
@@ -292,6 +358,7 @@ function mapOfferToBackendService(offer: DispatchOfferLike): BackendService | nu
 
   const mergedMeta = mergeOfferMetas(offer, nested);
   const { origin, destination } = resolveOfferOriginDestination(offer, nested, mergedMeta);
+  const requester = resolveServiceRequester(offer, nested);
 
   return {
     service_id: serviceId,
@@ -309,6 +376,7 @@ function mapOfferToBackendService(offer: DispatchOfferLike): BackendService | nu
     expires_at: (nested?.expires_at ?? offer.expires_at ?? null) as string | null,
     created_at: nested?.created_at ?? offer.created_at,
     updated_at: nested?.updated_at ?? offer.updated_at,
+    requester,
   };
 }
 
@@ -406,7 +474,9 @@ export function useMessengerOperationalState() {
       const data = await jsonGet<{ services: BackendService[] }>(
         `/v1/services/my?actor_role=mensajero&actor_id=${encodeURIComponent(actorId)}`
       );
-      const list = Array.isArray(data?.services) ? data.services : [];
+      const list = Array.isArray(data?.services)
+        ? data.services.map((s) => enrichBackendService(s))
+        : [];
       setMyServices(list);
       return list;
     } catch (error: any) {

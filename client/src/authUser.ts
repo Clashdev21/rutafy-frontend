@@ -1,6 +1,13 @@
+import {
+  normalizeOperationalParticipant,
+  type OperationalParticipant,
+} from "@/lib/operationalParticipant";
+
 /**
  * Shape estable expuesto a la UI tras GET /v1/auth/me (y normalización defensiva).
  */
+
+export type RequesterProfile = OperationalParticipant;
 
 export type AuthUser = {
   id: string | number;
@@ -13,6 +20,7 @@ export type AuthUser = {
   appRole: "ADMIN" | "TRANSPORTISTA" | "MENSAJERO";
   actor_id: string | null;
   actor_type: string | null;
+  requester_profile: RequesterProfile | null;
 };
 
 function pickStr(v: unknown): string | null {
@@ -114,6 +122,11 @@ export function normalizeAuthUser(raw: unknown): AuthUser | null {
   const roleForLayout =
     appRole === "ADMIN" || roleRaw === "ADMIN" ? "admin" : "user";
 
+  const requester_profile =
+    normalizeOperationalParticipant(o.requester_profile) ??
+    normalizeOperationalParticipant(u.requester_profile) ??
+    null;
+
   return {
     id: idVal as string | number,
     user_id,
@@ -124,5 +137,6 @@ export function normalizeAuthUser(raw: unknown): AuthUser | null {
     appRole,
     actor_id,
     actor_type,
+    requester_profile,
   };
 }

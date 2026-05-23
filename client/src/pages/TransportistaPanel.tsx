@@ -15,6 +15,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { OperationalParticipantCard } from "@/components/OperationalParticipantCard";
+import { formatServiceRouteEndpoint } from "@/lib/formatOperationalLocation";
+import {
+  normalizeOperationalParticipant,
+  type OperationalParticipant,
+} from "@/lib/operationalParticipant";
+import type { RequesterProfile } from "@/authUser";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -91,6 +98,7 @@ type LocalServiceItem = {
   eta_delivery_at?: string | null;
   sla_pickup_deadline_at?: string | null;
   sla_delivery_deadline_at?: string | null;
+  assigned_messenger?: OperationalParticipant | null;
 };
 
 type BackendCreateServiceResponse = Record<string, unknown>;
@@ -128,8 +136,9 @@ type BackendServiceRow = {
   status?: string;
   created_at?: string;
   createdAt?: string;
-  origin?: string | null;
-  destination?: string | null;
+  origin?: string | Record<string, unknown> | null;
+  destination?: string | Record<string, unknown> | null;
+  meta?: Record<string, unknown> | null;
   serviceCode?: string;
   service_code?: string;
   closePin?: string;
@@ -149,6 +158,7 @@ type BackendServiceRow = {
   eta_delivery_at?: string | null;
   sla_pickup_deadline_at?: string | null;
   sla_delivery_deadline_at?: string | null;
+  assigned_messenger?: unknown;
 };
 
 type BackendServicesListResponse = {
@@ -352,8 +362,18 @@ function normalizeBackendServiceToLocal(
   const createdAt = String(
     service.created_at ?? service.createdAt ?? new Date().toISOString(),
   );
-  const origin = String(service.origin ?? "Origen no definido");
-  const destination = String(service.destination ?? "Destino no definido");
+  const origin = formatServiceRouteEndpoint(
+    service.origin,
+    service.meta ?? undefined,
+    "origin",
+    "Origen no definido",
+  );
+  const destination = formatServiceRouteEndpoint(
+    service.destination,
+    service.meta ?? undefined,
+    "destination",
+    "Destino no definido",
+  );
 
   const closePinFromApi = extractValidClosePinDigits(service.closePin ?? service.close_pin ?? null);
 
@@ -406,6 +426,7 @@ function normalizeBackendServiceToLocal(
     eta_delivery_at: service.eta_delivery_at ?? null,
     sla_pickup_deadline_at: service.sla_pickup_deadline_at ?? null,
     sla_delivery_deadline_at: service.sla_delivery_deadline_at ?? null,
+    assigned_messenger: normalizeOperationalParticipant(service.assigned_messenger),
   };
 }
 
@@ -1014,6 +1035,12 @@ function AssignedServiceView({
         </div>
       </div>
 
+      <OperationalParticipantCard
+        title="Mensajero asignado"
+        participant={activeService.assigned_messenger}
+        variant="onColor"
+      />
+
       {closePin ? (
         <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 space-y-2">
           <p className="text-sm font-semibold text-white">PIN de cierre</p>
@@ -1101,6 +1128,12 @@ function InProgressServiceView({
           <p className="mt-0.5 font-medium text-white">{activeService.destination}</p>
         </div>
       </div>
+
+      <OperationalParticipantCard
+        title="Mensajero asignado"
+        participant={activeService.assigned_messenger}
+        variant="onColor"
+      />
 
       {closePin ? (
         <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 space-y-2">
@@ -1663,37 +1696,90 @@ function TransportistaActivityView({
 type TransportistaAccountViewProps = {
   userName: string | null | undefined;
   userEmail: string | null | undefined;
+  userPhone: string | null | undefined;
+  requesterProfile: RequesterProfile | null;
   onLogout: () => void | Promise<void>;
 };
 
-function TransportistaAccountView({ userName, userEmail, onLogout }: TransportistaAccountViewProps) {
+function profileField(
+  profile: RequesterProfile | null,
+  key: keyof RequesterProfile,
+): string {
+  const v = profile?.[key];
+  return v != null && String(v).trim() ? String(v).trim() : "—";
+}
+
+function TransportistaAccountView({
+  userName,
+  userEmail,
+  userPhone,
+  requesterProfile,
+  onLogout,
+}: TransportistaAccountViewProps) {
   return (
     <div className="space-y-6">
       <Card className="border-0 shadow-sm">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <User className="w-5 h-5" />
-            Mi Perfil
+            Cuenta operativa
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
             <div className="flex justify-between py-2 border-b">
-              <span className="text-gray-500">Nombre</span>
-              <span className="font-medium">{userName || "-"}</span>
+              <span className="text-gray-500">Operador</span>
+              <span className="font-medium text-right">{userName || "—"}</span>
+            </div>
+
+            <div className="flex justify-between py-2 border-b">
+              <span className="text-gray-500">Teléfono</span>
+              <span className="font-medium">{userPhone || "—"}</span>
             </div>
 
             <div className="flex justify-between py-2 border-b">
               <span className="text-gray-500">Email</span>
-              <span className="font-medium">{userEmail || "-"}</span>
+              <span className="font-medium">{userEmail || "—"}</span>
             </div>
 
             <div className="flex justify-between py-2 border-b">
-              <span className="text-gray-500">Rol</span>
-              <span className="px-2 py-1 bg-[#2A9D8F]/10 text-[#2A9D8F] rounded-full text-sm font-medium">
-                Transportista
+              <span className="text-gray-500">Nombre operativo</span>
+              <span className="font-medium text-right">
+                {profileField(requesterProfile, "name") !== "—"
+                  ? profileField(requesterProfile, "name")
+                  : userName || "—"}
               </span>
             </div>
+
+            <div className="flex justify-between py-2 border-b">
+              <span className="text-gray-500">Placa</span>
+              <span className="font-mono font-medium">
+                {profileField(requesterProfile, "plate")}
+              </span>
+            </div>
+
+            <div className="flex justify-between py-2 border-b">
+              <span className="text-gray-500">Tipo de vehículo</span>
+              <span className="font-medium text-right">
+                {profileField(requesterProfile, "vehicle_type")}
+              </span>
+            </div>
+
+            <div className="flex justify-between py-2 border-b">
+              <span className="text-gray-500">Referencia vehículo</span>
+              <span className="font-medium text-right">
+                {profileField(requesterProfile, "vehicle_reference")}
+              </span>
+            </div>
+
+            {requesterProfile?.company_name ? (
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-gray-500">Empresa</span>
+                <span className="font-medium text-right">
+                  {requesterProfile.company_name}
+                </span>
+              </div>
+            ) : null}
 
             <div className="flex justify-between py-2">
               <span className="text-gray-500">Estado</span>
@@ -2320,10 +2406,18 @@ export default function TransportistaPanel() {
               </Avatar>
 
               <div>
-                <h1 className="text-xl font-bold">Panel Transportista</h1>
+                <h1 className="text-xl font-bold">Panel de solicitudes</h1>
                 <p className="text-white/75 text-sm">
-                  {user?.name || user?.email || "Usuario"}
+                  Operador: {user?.name || user?.email || "—"}
                 </p>
+                {user?.requester_profile?.plate ? (
+                  <p className="text-white/65 text-xs">
+                    Placa {user.requester_profile.plate}
+                    {user.requester_profile.vehicle_type
+                      ? ` · ${user.requester_profile.vehicle_type}`
+                      : ""}
+                  </p>
+                ) : null}
               </div>
             </div>
           </div>
@@ -2397,6 +2491,8 @@ export default function TransportistaPanel() {
           <TransportistaAccountView
             userName={user?.name}
             userEmail={user?.email}
+            userPhone={user?.phone}
+            requesterProfile={user?.requester_profile ?? null}
             onLogout={handleLogout}
           />
         )}
