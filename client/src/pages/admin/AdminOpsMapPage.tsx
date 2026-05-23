@@ -649,8 +649,6 @@ function syncServiceOverlay(
   htmlCleanupRef: React.MutableRefObject<(() => void) | null>,
   projectionBridgeRef: React.MutableRefObject<google.maps.OverlayView | null>,
 ): void {
-  console.log("[ops-map] sync overlay start");
-
   clearAllServiceVisuals(
     overlayRef,
     polylineRef,
@@ -664,11 +662,6 @@ function syncServiceOverlay(
   const flags = detail.operational_flags;
   const hasSlaBreach =
     flags?.sla_pickup_breach === true || flags?.sla_delivery_breach === true;
-
-  console.log("[ops-map] overlay coords", {
-    origin: originPos,
-    destination: destPos,
-  });
 
   if (originPos) {
     const label = detail.origin?.label?.trim() || "—";
@@ -692,8 +685,6 @@ function syncServiceOverlay(
     );
   }
 
-  console.log("[ops-map] markers created");
-
   if (originPos && destPos) {
     polylineRef.current = new google.maps.Polyline({
       map,
@@ -711,7 +702,6 @@ function syncServiceOverlay(
       zIndex: 9998,
     });
 
-    console.log("[ops-map] polyline created");
     google.maps.event.trigger(map, "resize");
 
     const bounds = new google.maps.LatLngBounds();
@@ -740,7 +730,6 @@ function syncServiceOverlay(
       htmlCleanupRef,
       projectionBridgeRef,
     );
-    console.log("[ops-map] html route overlay synced");
   };
 
   if (originPos && destPos) {
@@ -1276,7 +1265,6 @@ export default function AdminOpsMapPage() {
   }, []);
 
   const handleOpenServiceDetail = useCallback(async (serviceId: string) => {
-    console.log("[ops-map] open service detail", serviceId);
     setServiceDetailOpen(true);
     setServiceDetailLoading(true);
     setServiceDetailError(null);
@@ -1290,7 +1278,6 @@ export default function AdminOpsMapPage() {
     );
     try {
       const detail = await getAdminOpsServiceDetail(serviceId);
-      console.log("[ops-map] fetched service detail", detail);
       setServiceDetail(detail);
       const map = mapRef.current;
       if (map) {
