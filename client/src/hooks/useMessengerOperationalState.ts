@@ -153,8 +153,12 @@ const MESSENGER_HEARTBEAT_INTERVAL_MS = 30_000;
 
 function resolveHeartbeatAvailability(
   isOnline: boolean,
-): "AVAILABLE" | "OFFLINE" {
-  return isOnline ? "AVAILABLE" : "OFFLINE";
+  uiState: UiState,
+): "AVAILABLE" | "OFFLINE" | undefined {
+  if (!isOnline) return "OFFLINE";
+  if (uiState === "ASSIGNED" || uiState === "IN_SERVICE") return undefined;
+  if (uiState === "AVAILABLE") return "AVAILABLE";
+  return undefined;
 }
 
 async function readBatteryLevel(): Promise<number | null> {
@@ -461,6 +465,7 @@ export function useMessengerOperationalState() {
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastHeartbeatLatRef = useRef<number | null>(null);
   const lastHeartbeatLngRef = useRef<number | null>(null);
+  const uiStateRef = useRef<UiState>("OFFLINE");
   const locationWatchIdRef = useRef<number | null>(null);
 
   const loadServiceEvidences = useCallback(async (serviceId: string, silent = false) => {
@@ -628,9 +633,15 @@ export function useMessengerOperationalState() {
     const sendHeartbeat = async () => {
       try {
         const battery_level = await readBatteryLevel();
-        const payload: Parameters<typeof postMessengerHeartbeat>[0] = {
-          availability_status: resolveHeartbeatAvailability(isOnline),
-        };
+        const availability_status = resolveHeartbeatAvailability(
+          isOnline,
+          uiStateRef.current,
+        );
+        const payload: Parameters<typeof postMessengerHeartbeat>[0] = {};
+
+        if (availability_status !== undefined) {
+          payload.availability_status = availability_status;
+        }
 
         const lat = lastHeartbeatLatRef.current;
         const lng = lastHeartbeatLngRef.current;
@@ -1238,6 +1249,8 @@ export function useMessengerOperationalState() {
   } else {
     uiState = "AVAILABLE";
   }
+
+  uiStateRef.current = uiState;
 
   const showPrimaryOfferHero = isOnline && !dispatchCurrentService;
 
