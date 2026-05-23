@@ -3,11 +3,24 @@ import {
   type OpsMapMessenger,
   type OpsMessengerState,
 } from "@/api/admin-ops-map";
+import {
+  getAdminOpsServiceDetail,
+  type AdminOpsServiceDetail,
+  type OpsServiceLocation,
+  type OpsServiceTimelineEvent,
+} from "@/api/admin-ops-service";
 import AdminLayout from "@/components/AdminLayout";
 import { MapView } from "@/components/Map";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { List, RefreshCw, Wifi, WifiOff, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -84,6 +97,16 @@ function hasValidCoords(m: OpsMapMessenger): boolean {
   );
 }
 
+function locationToPosition(
+  loc: OpsServiceLocation | null | undefined,
+): google.maps.LatLngLiteral | null {
+  if (loc == null || loc.lat == null || loc.lng == null) return null;
+  const lat = typeof loc.lat === "number" ? loc.lat : Number(loc.lat);
+  const lng = typeof loc.lng === "number" ? loc.lng : Number(loc.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
 function isGhostMessenger(m: OpsMapMessenger): boolean {
   return (
     m.ops_state === "BUSY_IDLE" &&
@@ -102,6 +125,242 @@ function getMessengerDisplayName(m: OpsMapMessenger): string {
 
 function getMarkerTitle(m: OpsMapMessenger): string {
   return `${getMessengerDisplayName(m)} · ${OPS_STATE_LABELS[m.ops_state]}`;
+}
+
+function displayText(value: string | number | null | undefined): string {
+  if (value == null) return "—";
+  const s = String(value).trim();
+  return s.length > 0 ? s : "—";
+}
+
+function displayBool(value: boolean | null | undefined): string {
+  if (value === true) return "Sí";
+  if (value === false) return "No";
+  return "—";
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value?.trim()) return "—";
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) return value;
+  return new Date(ms).toLocaleString("es-CO", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
+
+function formatLocationBlock(loc: OpsServiceLocation | null | undefined): string {
+  if (!loc) return "—";
+  const label = loc.label?.trim();
+  const nodePart =
+    loc.node?.name?.trim() || loc.node?.code?.trim() || loc.node?.node_id?.trim();
+  const lat = loc.lat;
+  const lng = loc.lng;
+  const coords =
+    lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)
+      ? `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+      : null;
+  const parts = [label, nodePart, coords].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : "—";
+}
+
+function formatTimelineEventTitle(ev: OpsServiceTimelineEvent): string {
+  if (ev.from_status && ev.to_status) {
+    return `${ev.from_status} → ${ev.to_status}`;
+  }
+  return displayText(ev.to_status ?? ev.from_status);
+}
+
+function DetailField({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-xs text-gray-500 mb-0.5">{label}</p>
+      <p
+        className={cn(
+          "text-sm text-gray-800 break-words",
+          mono && "font-mono text-xs",
+        )}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function OpsServiceDetailDialog({
+  open,
+  onOpenChange,
+  loading,
+  error,
+  detail,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  loading: boolean;
+  error: string | null;
+  detail: AdminOpsServiceDetail | null;
+}) {
+  const flags = detail?.operational_flags;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="text-[#1E3A5F]">Detalle operacional</DialogTitle>
+          {detail ? (
+            <p
+              className="text-xs font-mono text-gray-500 break-all"
+              title={detail.service_id}
+            >
+              {detail.service_id}
+            </p>
+          ) : null}
+        </DialogHeader>
+
+        <ServiceRouteLegend />
+
+        {loading ? (
+          <p className="text-sm text-gray-500 py-6 text-center">Cargando detalle…</p>
+        ) : error ? (
+          <p className="text-sm text-red-600 py-4">{error}</p>
+        ) : detail ? (
+          <div className="space-y-4 text-sm">
+            <div className="grid grid-cols-2 gap-3">
+              <DetailField label="Estado" value={displayText(detail.status)} />
+              <DetailField
+                label="Dispatch"
+                value={displayText(detail.dispatch_status)}
+              />
+              <DetailField
+                label="Tipo"
+                value={displayText(detail.service_type)}
+              />
+            </div>
+
+            <div className="space-y-2 rounded-lg border border-gray-100 bg-gray-50/80 p-3">
+              <p className="text-xs font-semibold text-[#1E3A5F]">Ruta</p>
+              <DetailField label="Origen" value={formatLocationBlock(detail.origin)} />
+              <DetailField
+                label="Destino"
+                value={formatLocationBlock(detail.destination)}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <DetailField
+                label="Empresa"
+                value={displayText(detail.company?.name)}
+              />
+              <DetailField
+                label="Tel. empresa"
+                value={displayText(detail.company?.phone)}
+              />
+              <DetailField
+                label="Mensajero"
+                value={displayText(detail.messenger?.full_name)}
+              />
+              <DetailField
+                label="Tel. mensajero"
+                value={displayText(detail.messenger?.phone)}
+              />
+            </div>
+
+            <div className="space-y-2 rounded-lg border border-gray-100 bg-gray-50/80 p-3">
+              <p className="text-xs font-semibold text-[#1E3A5F]">SLA</p>
+              <div className="grid grid-cols-2 gap-3">
+                <DetailField
+                  label="ETA recogida"
+                  value={formatDateTime(detail.sla?.eta_pickup_at)}
+                />
+                <DetailField
+                  label="ETA entrega"
+                  value={formatDateTime(detail.sla?.eta_delivery_at)}
+                />
+                <DetailField
+                  label="Deadline recogida"
+                  value={formatDateTime(detail.sla?.sla_pickup_deadline_at)}
+                />
+                <DetailField
+                  label="Deadline entrega"
+                  value={formatDateTime(detail.sla?.sla_delivery_deadline_at)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-lg border border-gray-100 bg-gray-50/80 p-3">
+              <p className="text-xs font-semibold text-[#1E3A5F]">Flags operacionales</p>
+              <div className="grid grid-cols-2 gap-3">
+                <DetailField
+                  label="Stuck level"
+                  value={displayText(flags?.stuck_level)}
+                />
+                <DetailField
+                  label="Edad (min)"
+                  value={displayText(flags?.age_min)}
+                />
+                <DetailField
+                  label="Idle (min)"
+                  value={displayText(flags?.idle_min)}
+                />
+                <DetailField
+                  label="Alertas abiertas"
+                  value={displayText(flags?.open_alerts)}
+                />
+                <DetailField
+                  label="SLA recogida breach"
+                  value={displayBool(flags?.sla_pickup_breach)}
+                />
+                <DetailField
+                  label="SLA entrega breach"
+                  value={displayBool(flags?.sla_delivery_breach)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-[#1E3A5F]">Timeline</p>
+              {detail.timeline.length === 0 ? (
+                <p className="text-xs text-gray-400">Sin eventos recientes</p>
+              ) : (
+                <ul className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                  {detail.timeline.map((ev, index) => (
+                    <li
+                      key={`${ev.history_id ?? ""}-${ev.created_at ?? ""}-${index}`}
+                      className="rounded-md border border-gray-100 bg-white px-3 py-2 text-xs"
+                    >
+                      <p className="font-medium text-gray-800">
+                        {formatTimelineEventTitle(ev)}
+                      </p>
+                      {ev.note ? (
+                        <p className="text-gray-600 mt-0.5">{ev.note}</p>
+                      ) : null}
+                      <p className="text-gray-400 mt-1">
+                        {formatDateTime(ev.created_at)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            Cerrar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function canUseAdvancedMarkers(): boolean {
@@ -126,6 +385,371 @@ function clearMarker(
 
 function detachMarker(entry: MapMarkerEntry): void {
   clearMarker(entry.marker);
+}
+
+const SERVICE_POLYLINE_NORMAL = "#64748b";
+const SERVICE_POLYLINE_BREACH = "#ef4444";
+
+function ServiceRouteLegend() {
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-600">
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold text-white"
+          style={{ backgroundColor: "#16a34a" }}
+        >
+          O
+        </span>
+        Origen
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold text-white"
+          style={{ backgroundColor: "#7c3aed" }}
+        >
+          D
+        </span>
+        Destino
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          className="h-1 w-6 shrink-0 rounded-full"
+          style={{ backgroundColor: SERVICE_POLYLINE_BREACH }}
+        />
+        Línea roja = SLA vencido
+      </span>
+    </div>
+  );
+}
+
+type ServiceOverlayMarker = google.maps.marker.AdvancedMarkerElement;
+
+type ServiceOverlayState = {
+  origin: ServiceOverlayMarker | null;
+  destination: ServiceOverlayMarker | null;
+};
+
+function createServicePinElement(label: string, color: string): HTMLDivElement {
+  const div = document.createElement("div");
+  div.textContent = label;
+  div.style.width = "34px";
+  div.style.height = "34px";
+  div.style.borderRadius = "9999px";
+  div.style.backgroundColor = color;
+  div.style.color = "white";
+  div.style.fontWeight = "800";
+  div.style.display = "flex";
+  div.style.alignItems = "center";
+  div.style.justifyContent = "center";
+  div.style.border = "3px solid white";
+  div.style.boxShadow = "0 2px 10px rgba(0,0,0,0.4)";
+  div.style.fontSize = "14px";
+  div.style.lineHeight = "1";
+  div.style.transform = "translate(-50%, -50%)";
+  return div;
+}
+
+function createServiceAdvancedMarker(
+  map: google.maps.Map,
+  position: google.maps.LatLngLiteral,
+  label: string,
+  title: string,
+  color: string,
+  zIndex = 9999,
+): ServiceOverlayMarker {
+  const div = createServicePinElement(label, color);
+  return new window.google!.maps!.marker!.AdvancedMarkerElement({
+    map,
+    position,
+    title,
+    content: div,
+    zIndex,
+  });
+}
+
+function clearServiceOverlay(
+  overlayRef: React.MutableRefObject<ServiceOverlayState>,
+  polylineRef: React.MutableRefObject<google.maps.Polyline | null>,
+): void {
+  if (overlayRef.current.origin) {
+    overlayRef.current.origin.map = null;
+  }
+  if (overlayRef.current.destination) {
+    overlayRef.current.destination.map = null;
+  }
+  overlayRef.current = { origin: null, destination: null };
+
+  if (polylineRef.current) {
+    polylineRef.current.setMap(null);
+    polylineRef.current = null;
+  }
+}
+
+function ensureProjectionBridge(
+  map: google.maps.Map,
+  bridgeRef: React.MutableRefObject<google.maps.OverlayView | null>,
+): google.maps.OverlayView {
+  if (!bridgeRef.current) {
+    class ProjectionBridge extends google.maps.OverlayView {
+      onAdd(): void {}
+      draw(): void {}
+      onRemove(): void {}
+    }
+    const bridge = new ProjectionBridge();
+    bridge.setMap(map);
+    bridgeRef.current = bridge;
+  } else if (bridgeRef.current.getMap() !== map) {
+    bridgeRef.current.setMap(map);
+  }
+  return bridgeRef.current;
+}
+
+function latLngToOverlayPixel(
+  bridge: google.maps.OverlayView,
+  latLng: google.maps.LatLngLiteral,
+): { x: number; y: number } | null {
+  const projection = bridge.getProjection();
+  if (!projection) return null;
+  const point = projection.fromLatLngToDivPixel(
+    new google.maps.LatLng(latLng.lat, latLng.lng),
+  );
+  if (!point) return null;
+  return { x: point.x, y: point.y };
+}
+
+function clearServiceHtmlOverlay(
+  layerRef: React.RefObject<HTMLDivElement | null>,
+  cleanupRef: React.MutableRefObject<(() => void) | null>,
+  projectionBridgeRef: React.MutableRefObject<google.maps.OverlayView | null>,
+): void {
+  cleanupRef.current?.();
+  cleanupRef.current = null;
+  if (layerRef.current) {
+    layerRef.current.replaceChildren();
+  }
+  if (projectionBridgeRef.current) {
+    projectionBridgeRef.current.setMap(null);
+    projectionBridgeRef.current = null;
+  }
+}
+
+function createHtmlRoutePin(label: string, color: string): HTMLDivElement {
+  const pin = createServicePinElement(label, color);
+  pin.style.position = "absolute";
+  pin.style.left = "0";
+  pin.style.top = "0";
+  pin.style.margin = "0";
+  pin.style.pointerEvents = "none";
+  return pin;
+}
+
+function syncServiceHtmlOverlay(
+  map: google.maps.Map,
+  layerEl: HTMLDivElement,
+  originPos: google.maps.LatLngLiteral | null,
+  destPos: google.maps.LatLngLiteral | null,
+  hasSlaBreach: boolean,
+  cleanupRef: React.MutableRefObject<(() => void) | null>,
+  projectionBridgeRef: React.MutableRefObject<google.maps.OverlayView | null>,
+): void {
+  cleanupRef.current?.();
+  cleanupRef.current = null;
+  layerEl.replaceChildren();
+
+  if (!originPos && !destPos) return;
+
+  const bridge = ensureProjectionBridge(map, projectionBridgeRef);
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("width", "100%");
+  svg.setAttribute("height", "100%");
+  svg.style.position = "absolute";
+  svg.style.inset = "0";
+  svg.style.overflow = "visible";
+  svg.style.pointerEvents = "none";
+
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line.setAttribute("stroke-width", "6");
+  line.setAttribute("stroke-linecap", "round");
+  line.setAttribute(
+    "stroke",
+    hasSlaBreach ? SERVICE_POLYLINE_BREACH : SERVICE_POLYLINE_NORMAL,
+  );
+  line.setAttribute("opacity", "0.95");
+
+  let originPin: HTMLDivElement | null = null;
+  let destPin: HTMLDivElement | null = null;
+
+  if (originPos) {
+    originPin = createHtmlRoutePin("O", "#16a34a");
+    layerEl.appendChild(originPin);
+  }
+  if (destPos) {
+    destPin = createHtmlRoutePin("D", "#7c3aed");
+    layerEl.appendChild(destPin);
+  }
+  if (originPos && destPos) {
+    svg.appendChild(line);
+    layerEl.appendChild(svg);
+  }
+
+  const positionOverlay = () => {
+    const o = originPos ? latLngToOverlayPixel(bridge, originPos) : null;
+    const d = destPos ? latLngToOverlayPixel(bridge, destPos) : null;
+
+    if (originPin && o) {
+      originPin.style.transform = `translate(${o.x}px, ${o.y}px) translate(-50%, -50%)`;
+    }
+    if (destPin && d) {
+      destPin.style.transform = `translate(${d.x}px, ${d.y}px) translate(-50%, -50%)`;
+    }
+    if (o && d) {
+      line.setAttribute("x1", String(o.x));
+      line.setAttribute("y1", String(o.y));
+      line.setAttribute("x2", String(d.x));
+      line.setAttribute("y2", String(d.y));
+    }
+  };
+
+  const listeners: google.maps.MapsEventListener[] = [
+    map.addListener("idle", positionOverlay),
+    map.addListener("zoom_changed", positionOverlay),
+    map.addListener("center_changed", positionOverlay),
+    map.addListener("bounds_changed", positionOverlay),
+  ];
+
+  positionOverlay();
+  google.maps.event.addListenerOnce(map, "idle", positionOverlay);
+
+  cleanupRef.current = () => {
+    for (const listener of listeners) {
+      google.maps.event.removeListener(listener);
+    }
+    layerEl.replaceChildren();
+  };
+}
+
+function clearAllServiceVisuals(
+  overlayRef: React.MutableRefObject<ServiceOverlayState>,
+  polylineRef: React.MutableRefObject<google.maps.Polyline | null>,
+  htmlLayerRef: React.RefObject<HTMLDivElement | null>,
+  htmlCleanupRef: React.MutableRefObject<(() => void) | null>,
+  projectionBridgeRef: React.MutableRefObject<google.maps.OverlayView | null>,
+): void {
+  clearServiceOverlay(overlayRef, polylineRef);
+  clearServiceHtmlOverlay(htmlLayerRef, htmlCleanupRef, projectionBridgeRef);
+}
+
+function syncServiceOverlay(
+  map: google.maps.Map,
+  detail: AdminOpsServiceDetail,
+  overlayRef: React.MutableRefObject<ServiceOverlayState>,
+  polylineRef: React.MutableRefObject<google.maps.Polyline | null>,
+  htmlLayerRef: React.RefObject<HTMLDivElement | null>,
+  htmlCleanupRef: React.MutableRefObject<(() => void) | null>,
+  projectionBridgeRef: React.MutableRefObject<google.maps.OverlayView | null>,
+): void {
+  console.log("[ops-map] sync overlay start");
+
+  clearAllServiceVisuals(
+    overlayRef,
+    polylineRef,
+    htmlLayerRef,
+    htmlCleanupRef,
+    projectionBridgeRef,
+  );
+
+  const originPos = locationToPosition(detail.origin);
+  const destPos = locationToPosition(detail.destination);
+  const flags = detail.operational_flags;
+  const hasSlaBreach =
+    flags?.sla_pickup_breach === true || flags?.sla_delivery_breach === true;
+
+  console.log("[ops-map] overlay coords", {
+    origin: originPos,
+    destination: destPos,
+  });
+
+  if (originPos) {
+    const label = detail.origin?.label?.trim() || "—";
+    overlayRef.current.origin = createServiceAdvancedMarker(
+      map,
+      originPos,
+      "O",
+      `Origen: ${label}`,
+      "#16a34a",
+    );
+  }
+
+  if (destPos) {
+    const label = detail.destination?.label?.trim() || "—";
+    overlayRef.current.destination = createServiceAdvancedMarker(
+      map,
+      destPos,
+      "D",
+      `Destino: ${label}`,
+      "#7c3aed",
+    );
+  }
+
+  console.log("[ops-map] markers created");
+
+  if (originPos && destPos) {
+    polylineRef.current = new google.maps.Polyline({
+      map,
+      path: [
+        { lat: originPos.lat, lng: originPos.lng },
+        { lat: destPos.lat, lng: destPos.lng },
+      ],
+      geodesic: true,
+      strokeColor: hasSlaBreach
+        ? SERVICE_POLYLINE_BREACH
+        : SERVICE_POLYLINE_NORMAL,
+      strokeOpacity: 1,
+      strokeWeight: 6,
+      clickable: false,
+      zIndex: 9998,
+    });
+
+    console.log("[ops-map] polyline created");
+    google.maps.event.trigger(map, "resize");
+
+    const bounds = new google.maps.LatLngBounds();
+    bounds.extend(originPos);
+    bounds.extend(destPos);
+    map.fitBounds(bounds, 64);
+    window.setTimeout(() => {
+      map.panBy(1, 1);
+      map.panBy(-1, -1);
+    }, 50);
+  } else if (originPos) {
+    map.panTo(originPos);
+  } else if (destPos) {
+    map.panTo(destPos);
+  }
+
+  const runHtmlOverlay = () => {
+    const layer = htmlLayerRef.current;
+    if (!layer) return;
+    syncServiceHtmlOverlay(
+      map,
+      layer,
+      originPos,
+      destPos,
+      hasSlaBreach,
+      htmlCleanupRef,
+      projectionBridgeRef,
+    );
+    console.log("[ops-map] html route overlay synced");
+  };
+
+  if (originPos && destPos) {
+    google.maps.event.addListenerOnce(map, "idle", () => {
+      window.setTimeout(runHtmlOverlay, 80);
+    });
+  } else {
+    runHtmlOverlay();
+  }
 }
 
 function setMarkerPosition(
@@ -275,10 +899,14 @@ function MessengerOpsPanel({
   messenger,
   lastUpdatedAt,
   onClose,
+  onRecenter,
+  onOpenService,
 }: {
   messenger: OpsMapMessenger;
   lastUpdatedAt: Date | null;
   onClose: () => void;
+  onRecenter: () => void;
+  onOpenService: () => void;
 }) {
   const name = getMessengerDisplayName(messenger);
   const signalStale = messenger.is_online === false;
@@ -380,10 +1008,22 @@ function MessengerOpsPanel({
         ) : null}
 
         <div className="flex flex-wrap gap-2 pt-1">
-          <Button type="button" variant="outline" size="sm" disabled>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!hasCoords}
+            onClick={onRecenter}
+          >
             Recentrar
           </Button>
-          <Button type="button" variant="outline" size="sm" disabled>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!messenger.active_service}
+            onClick={onOpenService}
+          >
             Abrir servicio
           </Button>
         </div>
@@ -481,10 +1121,26 @@ export default function AdminOpsMapPage() {
   const [selectedMessengerId, setSelectedMessengerId] = useState<string | null>(
     null,
   );
+  const [serviceDetailOpen, setServiceDetailOpen] = useState(false);
+  const [serviceDetailLoading, setServiceDetailLoading] = useState(false);
+  const [serviceDetailError, setServiceDetailError] = useState<string | null>(
+    null,
+  );
+  const [serviceDetail, setServiceDetail] = useState<AdminOpsServiceDetail | null>(
+    null,
+  );
 
   const loadInFlightRef = useRef(false);
   const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<Map<string, MapMarkerEntry>>(new Map());
+  const serviceOverlayRef = useRef<ServiceOverlayState>({
+    origin: null,
+    destination: null,
+  });
+  const servicePolylineRef = useRef<google.maps.Polyline | null>(null);
+  const serviceHtmlOverlayRef = useRef<HTMLDivElement>(null);
+  const serviceHtmlCleanupRef = useRef<(() => void) | null>(null);
+  const serviceProjectionBridgeRef = useRef<google.maps.OverlayView | null>(null);
   const didFitBoundsRef = useRef(false);
   const useAdvancedMarkersRef = useRef<boolean | null>(null);
   const rowRefsRef = useRef<Record<string, HTMLDivElement | null>>({});
@@ -594,6 +1250,71 @@ export default function AdminOpsMapPage() {
     [handleSelectMessenger],
   );
 
+  const handleRecenterMessenger = useCallback((messenger: OpsMapMessenger) => {
+    if (!hasValidCoords(messenger)) return;
+    const map = mapRef.current;
+    if (!map) return;
+    map.panTo({
+      lat: messenger.lat as number,
+      lng: messenger.lng as number,
+    });
+    map.setZoom(15);
+  }, []);
+
+  const handleServiceDetailOpenChange = useCallback((open: boolean) => {
+    setServiceDetailOpen(open);
+    if (!open) {
+      setServiceDetail(null);
+      clearAllServiceVisuals(
+        serviceOverlayRef,
+        servicePolylineRef,
+        serviceHtmlOverlayRef,
+        serviceHtmlCleanupRef,
+        serviceProjectionBridgeRef,
+      );
+    }
+  }, []);
+
+  const handleOpenServiceDetail = useCallback(async (serviceId: string) => {
+    console.log("[ops-map] open service detail", serviceId);
+    setServiceDetailOpen(true);
+    setServiceDetailLoading(true);
+    setServiceDetailError(null);
+    setServiceDetail(null);
+    clearAllServiceVisuals(
+      serviceOverlayRef,
+      servicePolylineRef,
+      serviceHtmlOverlayRef,
+      serviceHtmlCleanupRef,
+      serviceProjectionBridgeRef,
+    );
+    try {
+      const detail = await getAdminOpsServiceDetail(serviceId);
+      console.log("[ops-map] fetched service detail", detail);
+      setServiceDetail(detail);
+      const map = mapRef.current;
+      if (map) {
+        syncServiceOverlay(
+          map,
+          detail,
+          serviceOverlayRef,
+          servicePolylineRef,
+          serviceHtmlOverlayRef,
+          serviceHtmlCleanupRef,
+          serviceProjectionBridgeRef,
+        );
+      }
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error
+          ? e.message
+          : "No fue posible cargar el detalle del servicio";
+      setServiceDetailError(message);
+    } finally {
+      setServiceDetailLoading(false);
+    }
+  }, []);
+
   const handleMapReady = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
     map.setCenter(MAP_DEFAULT_CENTER);
@@ -624,7 +1345,38 @@ export default function AdminOpsMapPage() {
   }, [mapReady, visibleMessengers, handleMarkerClick]);
 
   useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+
+    clearAllServiceVisuals(
+      serviceOverlayRef,
+      servicePolylineRef,
+      serviceHtmlOverlayRef,
+      serviceHtmlCleanupRef,
+      serviceProjectionBridgeRef,
+    );
+    if (!serviceDetail) return;
+
+    syncServiceOverlay(
+      map,
+      serviceDetail,
+      serviceOverlayRef,
+      servicePolylineRef,
+      serviceHtmlOverlayRef,
+      serviceHtmlCleanupRef,
+      serviceProjectionBridgeRef,
+    );
+  }, [mapReady, serviceDetail]);
+
+  useEffect(() => {
     return () => {
+      clearAllServiceVisuals(
+        serviceOverlayRef,
+        servicePolylineRef,
+        serviceHtmlOverlayRef,
+        serviceHtmlCleanupRef,
+        serviceProjectionBridgeRef,
+      );
       markersRef.current.forEach((entry) => {
         detachMarker(entry);
       });
@@ -648,6 +1400,13 @@ export default function AdminOpsMapPage() {
 
   return (
     <AdminLayout>
+      <OpsServiceDetailDialog
+        open={serviceDetailOpen}
+        onOpenChange={handleServiceDetailOpenChange}
+        loading={serviceDetailLoading}
+        error={serviceDetailError}
+        detail={serviceDetail}
+      />
       <div className="space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
@@ -720,6 +1479,11 @@ export default function AdminOpsMapPage() {
             initialZoom={MAP_DEFAULT_ZOOM}
             onMapReady={handleMapReady}
           />
+          <div
+            ref={serviceHtmlOverlayRef}
+            className="absolute inset-0 z-[15] pointer-events-none overflow-hidden"
+            aria-hidden
+          />
           <div className="absolute top-2 left-2 z-10 rounded-lg border border-gray-200/90 bg-white/95 shadow-sm px-3 py-2 text-xs">
             <p className="font-semibold text-[#1E3A5F] mb-1.5">Leyenda</p>
             <div className="flex flex-col gap-1">
@@ -735,13 +1499,25 @@ export default function AdminOpsMapPage() {
             </div>
           </div>
 
-          {selectedMessenger ? (
+          {serviceDetail && !serviceDetailLoading ? (
+            <div className="absolute bottom-2 left-2 z-10 max-w-[calc(100%-1rem)] rounded-lg border border-gray-200/90 bg-white/95 shadow-sm px-3 py-2">
+              <ServiceRouteLegend />
+            </div>
+          ) : null}
+
+          {selectedMessenger && !serviceDetailOpen ? (
             <>
               <div className="hidden md:block absolute top-2 right-2 z-20 w-80 max-h-[calc(100%-1rem)] overflow-auto pointer-events-auto">
                 <MessengerOpsPanel
                   messenger={selectedMessenger}
                   lastUpdatedAt={lastUpdatedAt}
                   onClose={() => handleSelectMessenger(null)}
+                  onRecenter={() => handleRecenterMessenger(selectedMessenger)}
+                  onOpenService={() =>
+                    void handleOpenServiceDetail(
+                      selectedMessenger.active_service!.service_id,
+                    )
+                  }
                 />
               </div>
               <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 max-h-[40vh] overflow-auto rounded-t-xl border-t border-gray-200 bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.12)] pointer-events-auto">
@@ -749,6 +1525,12 @@ export default function AdminOpsMapPage() {
                   messenger={selectedMessenger}
                   lastUpdatedAt={lastUpdatedAt}
                   onClose={() => handleSelectMessenger(null)}
+                  onRecenter={() => handleRecenterMessenger(selectedMessenger)}
+                  onOpenService={() =>
+                    void handleOpenServiceDetail(
+                      selectedMessenger.active_service!.service_id,
+                    )
+                  }
                 />
               </div>
             </>
