@@ -8,6 +8,8 @@ import {
   isValidUuid,
   useMessengerOperationalState,
   type BackendService,
+  type GeolocationPermissionState,
+  type OperationalLocationStatus,
   type ServiceEvidence,
   type ServiceStatus,
 } from "@/hooks/useMessengerOperationalState";
@@ -184,16 +186,75 @@ function OfflineView(props: { onToggle: () => void }) {
   );
 }
 
-function AvailableView(props: { onToggleOffline: () => void; onLogout: () => void }) {
+function formatOperationalGpsLabel(status: OperationalLocationStatus): string {
+  switch (status) {
+    case "fresh":
+      return "GPS activo";
+    case "unknown":
+      return "Obteniendo GPS...";
+    case "stale":
+      return "GPS vencido";
+    case "denied":
+      return "GPS sin permiso";
+    case "unavailable":
+      return "GPS no disponible";
+  }
+}
+
+function AvailableView(props: {
+  locationStatus: OperationalLocationStatus;
+  locationPermissionState: GeolocationPermissionState | null;
+  onRequestLocationPermission: () => void;
+  onToggleOffline: () => void;
+  onLogout: () => void;
+}) {
+  const gpsLabel = formatOperationalGpsLabel(props.locationStatus);
+  const gpsTone =
+    props.locationStatus === "fresh"
+      ? "border-[#2A9D8F]/25 bg-[#2A9D8F]/10 text-[#2A9D8F]"
+      : props.locationStatus === "unknown"
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : "border-red-200 bg-red-50 text-red-700";
+  const showGpsRetry =
+    props.locationStatus === "denied" || props.locationStatus === "unavailable";
+  const showPermanentDeniedHint =
+    props.locationStatus === "denied" && props.locationPermissionState === "denied";
+
   return (
     <div className="min-h-screen bg-[#FFFFFF] flex flex-col px-6 py-10">
       <div className="mx-auto w-full max-w-sm flex items-center justify-between gap-3">
-        <span
-          className="rounded-full border border-[#2A9D8F]/25 bg-[#2A9D8F]/10 px-3 py-1 text-xs font-medium text-[#2A9D8F]"
-          aria-label="Estado"
-        >
-          En línea
-        </span>
+        <div className="flex flex-col gap-1">
+          <span
+            className="rounded-full border border-[#2A9D8F]/25 bg-[#2A9D8F]/10 px-3 py-1 text-xs font-medium text-[#2A9D8F] w-fit"
+            aria-label="Estado"
+          >
+            En línea
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`rounded-full border px-3 py-1 text-xs font-medium w-fit ${gpsTone}`}
+              aria-label="Estado GPS"
+            >
+              {gpsLabel}
+            </span>
+            {showGpsRetry ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => props.onRequestLocationPermission()}
+                className="h-7 rounded-full border-red-200 px-2.5 text-xs text-red-700 hover:bg-red-50"
+              >
+                Activar GPS
+              </Button>
+            ) : null}
+          </div>
+          {showPermanentDeniedHint ? (
+            <p className="text-xs text-red-600 max-w-[14rem] leading-snug">
+              Habilita ubicación en Safari/iPhone
+            </p>
+          ) : null}
+        </div>
         <div className="flex items-center gap-2">
           <Button
             type="button"
@@ -666,6 +727,8 @@ export default function MensajeroPanel() {
     setEvidenceNote,
     currentLat,
     currentLng,
+    locationStatus,
+    locationPermissionState,
     locationRequested,
     showFullQueues,
     setShowFullQueues,
@@ -697,6 +760,7 @@ export default function MensajeroPanel() {
     handleCancelService,
     handleReportIncident,
     handleRequestLocation,
+    requestLocationPermission,
     clearEvidenceDraft,
     handleSelectEvidenceFile,
     uploadEvidenceForService,
@@ -711,6 +775,9 @@ export default function MensajeroPanel() {
   if (uiState === "AVAILABLE") {
     return (
       <AvailableView
+        locationStatus={locationStatus}
+        locationPermissionState={locationPermissionState}
+        onRequestLocationPermission={() => void requestLocationPermission()}
         onToggleOffline={() => void handleToggleAvailability()}
         onLogout={() => void handleLogout()}
       />

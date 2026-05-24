@@ -20,8 +20,12 @@ export type OpsMapMessenger = {
   ops_state: OpsMessengerState;
   is_online?: boolean;
   active_service?: OpsActiveService | null;
+  /** Coordenadas unificadas para mapa (desde map_lat/map_lng o lat/lng). */
   lat?: number | null;
   lng?: number | null;
+  map_lat?: number | null;
+  map_lng?: number | null;
+  location_updated_at?: string | null;
 };
 
 export type RequestedOpsServiceFlags = {
@@ -188,12 +192,11 @@ function normalizeMessenger(raw: unknown): OpsMapMessenger | null {
   ).trim();
   if (!messengerId) return null;
 
-  const latRaw = rec.lat;
-  const lngRaw = rec.lng;
-  const lat =
-    typeof latRaw === "number" && Number.isFinite(latRaw) ? latRaw : null;
-  const lng =
-    typeof lngRaw === "number" && Number.isFinite(lngRaw) ? lngRaw : null;
+  const mapLat = pick(rec, "map_lat", toFiniteNumber);
+  const mapLng = pick(rec, "map_lng", toFiniteNumber);
+  const lat = mapLat ?? pick(rec, "lat", toFiniteNumber);
+  const lng = mapLng ?? pick(rec, "lng", toFiniteNumber);
+  const location_updated_at = pick(rec, "location_updated_at", toOptionalString);
 
   return {
     messenger_id: messengerId,
@@ -217,6 +220,9 @@ function normalizeMessenger(raw: unknown): OpsMapMessenger | null {
     ),
     lat,
     lng,
+    map_lat: mapLat ?? lat,
+    map_lng: mapLng ?? lng,
+    location_updated_at,
   };
 }
 

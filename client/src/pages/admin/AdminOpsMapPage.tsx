@@ -112,12 +112,31 @@ function countByState(
 }
 
 function hasValidCoords(m: OpsMapMessenger): boolean {
+  const lat = m.lat ?? m.map_lat;
+  const lng = m.lng ?? m.map_lng;
   return (
-    m.lat != null &&
-    m.lng != null &&
-    Number.isFinite(m.lat) &&
-    Number.isFinite(m.lng)
+    lat != null &&
+    lng != null &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng)
   );
+}
+
+function getMessengerCoords(
+  m: OpsMapMessenger,
+): google.maps.LatLngLiteral | null {
+  const lat = m.lat ?? m.map_lat;
+  const lng = m.lng ?? m.map_lng;
+  if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+  return { lat, lng };
+}
+
+function formatMessengerCoords(m: OpsMapMessenger): string | null {
+  const coords = getMessengerCoords(m);
+  if (!coords) return null;
+  return `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
 }
 
 function locationToPosition(
@@ -800,7 +819,10 @@ function createMapMarker(
   messenger: OpsMapMessenger,
   useAdvanced: boolean,
 ): MapMarkerEntry {
-  const position = { lat: messenger.lat as number, lng: messenger.lng as number };
+  const position = getMessengerCoords(messenger);
+  if (!position) {
+    throw new Error("Messenger without valid coordinates");
+  }
   const title = getMarkerTitle(messenger);
   const color = OPS_PIN_COLORS[messenger.ops_state];
   const fillOpacity = messenger.ops_state === "OFFLINE" ? 0.55 : 1;
@@ -998,11 +1020,10 @@ function syncOpsMarkers(
 
   for (const messenger of visibleMessengers) {
     if (!hasValidCoords(messenger)) continue;
+    const pos = getMessengerCoords(messenger);
+    if (!pos) continue;
     nextIds.add(messenger.messenger_id);
-    validPoints.push({
-      lat: messenger.lat as number,
-      lng: messenger.lng as number,
-    });
+    validPoints.push(pos);
   }
 
   const idsToRemove: string[] = [];
@@ -1019,10 +1040,8 @@ function syncOpsMarkers(
   for (const messenger of visibleMessengers) {
     if (!hasValidCoords(messenger)) continue;
 
-    const position = {
-      lat: messenger.lat as number,
-      lng: messenger.lng as number,
-    };
+    const position = getMessengerCoords(messenger);
+    if (!position) continue;
     const existing = markersRef.current.get(messenger.messenger_id);
 
     if (existing && existing.opsState === messenger.ops_state) {
@@ -1074,6 +1093,7 @@ function MessengerOpsPanel({
   const name = getMessengerDisplayName(messenger);
   const signalStale = messenger.is_online === false;
   const hasCoords = hasValidCoords(messenger);
+  const coordsLabel = formatMessengerCoords(messenger);
 
   return (
     <Card className="border border-gray-200 shadow-lg bg-white/98">
@@ -1123,10 +1143,15 @@ function MessengerOpsPanel({
 
         <div>
           <p className="text-xs text-gray-500 mb-1">Última ubicación</p>
-          {hasCoords ? (
-            <p className="text-xs font-mono text-gray-700">
-              {messenger.lat!.toFixed(5)}, {messenger.lng!.toFixed(5)}
-            </p>
+          {coordsLabel ? (
+            <>
+              <p className="text-xs font-mono text-gray-700">{coordsLabel}</p>
+              {messenger.location_updated_at ? (
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {formatDateTime(messenger.location_updated_at)}
+                </p>
+              ) : null}
+            </>
           ) : (
             <p className="text-xs text-gray-400">Sin coordenadas</p>
           )}
@@ -1532,13 +1557,10 @@ export default function AdminOpsMapPage() {
   }, []);
 
   const handleRecenterMessenger = useCallback((messenger: OpsMapMessenger) => {
-    if (!hasValidCoords(messenger)) return;
+    const position = getMessengerCoords(messenger);
     const map = mapRef.current;
-    if (!map) return;
-    map.panTo({
-      lat: messenger.lat as number,
-      lng: messenger.lng as number,
-    });
+    if (!position || !map) return;
+    map.panTo(position);
     map.setZoom(15);
   }, []);
 

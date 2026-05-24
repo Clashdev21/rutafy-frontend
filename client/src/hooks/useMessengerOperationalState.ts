@@ -161,6 +161,37 @@ export function isValidUuid(value: string): boolean {
 }
 
 const MESSENGER_HEARTBEAT_INTERVAL_MS = 30_000;
+const LOCATION_FRESH_TTL_MS = 90_000;
+
+const GPS_BOOTSTRAP_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  maximumAge: 0,
+  timeout: 15000,
+};
+
+export type OperationalLocationStatus =
+  | "unknown"
+  | "fresh"
+  | "stale"
+  | "denied"
+  | "unavailable";
+
+export type GeolocationPermissionState = "granted" | "denied" | "prompt";
+
+export function isLocationFresh(
+  lastFixAt: number | null,
+  now = Date.now(),
+): boolean {
+  if (lastFixAt == null) return false;
+  return now - lastFixAt <= LOCATION_FRESH_TTL_MS;
+}
+
+function resolveGeolocationErrorStatus(
+  error: GeolocationPositionError,
+): OperationalLocationStatus {
+  if (error.code === error.PERMISSION_DENIED) return "denied";
+  return "unavailable";
+}
 
 function resolveHeartbeatAvailability(
   isOnline: boolean,
@@ -416,6 +447,11 @@ export function useMessengerOperationalState() {
   const [evidenceNote, setEvidenceNote] = useState("");
   const [currentLat, setCurrentLat] = useState<number | null>(null);
   const [currentLng, setCurrentLng] = useState<number | null>(null);
+  const [locationStatus, setLocationStatus] =
+    useState<OperationalLocationStatus>("unknown");
+  const [locationPermissionState, setLocationPermissionState] =
+    useState<GeolocationPermissionState | null>(null);
+  const [gpsBootstrapReady, setGpsBootstrapReady] = useState(false);
   const [locationRequested, setLocationRequested] = useState(false);
   const [showFullQueues, setShowFullQueues] = useState(false);
   const [realtimeReconnectVersion, setRealtimeReconnectVersion] = useState(0);
@@ -535,8 +571,98 @@ export function useMessengerOperationalState() {
   const heartbeatTimerRef = useRef<number | null>(null);
   const lastHeartbeatLatRef = useRef<number | null>(null);
   const lastHeartbeatLngRef = useRef<number | null>(null);
+  const lastLocationFixAtRef = useRef<number | null>(null);
   const uiStateRef = useRef<UiState>("OFFLINE");
   const locationWatchIdRef = useRef<number | null>(null);
+  const gpsBootstrapCancelRef = useRef<(() => void) | null>(null);
+
+  const applyOperationalLocationFix = useCallback((lat: number, lng: number) => {
+    lastHeartbeatLatRef.current = lat;
+    lastHeartbeatLngRef.current = lng;
+    lastLocationFixAtRef.current = Date.now();
+    setCurrentLat(lat);
+    setCurrentLng(lng);
+    setLocationStatus("fresh");
+  }, []);
+
+  const clearOperationalGps = useCallback(() => {
+    lastHeartbeatLatRef.current = null;
+    lastHeartbeatLngRef.current = null;
+    lastLocationFixAtRef.current = null;
+    setCurrentLat(null);
+    setCurrentLng(null);
+  }, []);
+
+  const syncGeolocationPermissionState = useCallback(async () => {
+    if (typeof navigator === "undefined" || !navigator.permissions?.query) {
+      return null;
+    }
+
+    try {
+      const result = await navigator.permissions.query({ name: "geolocation" });
+      const state = result.state as GeolocationPermissionState;
+      setLocationPermissionState(state);
+
+      result.onchange = () => {
+        setLocationPermissionState(result.state as GeolocationPermissionState);
+      };
+
+      return state;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const runGpsBootstrap = useCallback(() => {
+    gpsBootstrapCancelRef.current?.();
+    gpsBootstrapCancelRef.current = null;
+
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      clearOperationalGps();
+      setLocationStatus("unavailable");
+      setGpsBootstrapReady(true);
+      return () => {};
+    }
+
+    let cancelled = false;
+    const cancel = () => {
+      cancelled = true;
+    };
+    gpsBootstrapCancelRef.current = cancel;
+
+    setLocationStatus("unknown");
+    setGpsBootstrapReady(false);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (cancelled) return;
+        applyOperationalLocationFix(
+          position.coords.latitude,
+          position.coords.longitude,
+        );
+        setGpsBootstrapReady(true);
+        void syncGeolocationPermissionState();
+      },
+      (error) => {
+        if (cancelled) return;
+        console.warn("[messenger-location-bootstrap]", error);
+        clearOperationalGps();
+        setLocationStatus(resolveGeolocationErrorStatus(error));
+        setGpsBootstrapReady(true);
+        void syncGeolocationPermissionState();
+      },
+      GPS_BOOTSTRAP_OPTIONS,
+    );
+
+    return cancel;
+  }, [applyOperationalLocationFix, clearOperationalGps, syncGeolocationPermissionState]);
+
+  const requestLocationPermission = useCallback(async () => {
+    if (typeof window === "undefined") return;
+
+    await syncGeolocationPermissionState();
+    runGpsBootstrap();
+  }, [runGpsBootstrap, syncGeolocationPermissionState]);
 
   const loadServiceEvidences = useCallback(async (serviceId: string, silent = false) => {
     setLoadingEvidenceServiceId(serviceId);
@@ -597,6 +723,25 @@ export function useMessengerOperationalState() {
   }, [loading, isOnline, actorId, refreshMyServices, refreshAvailableServices]);
 
   useEffect(() => {
+    if (locationStatus !== "fresh" || !isOnline) return;
+
+    const fixAt = lastLocationFixAtRef.current;
+    if (fixAt == null) return;
+
+    const remaining = LOCATION_FRESH_TTL_MS - (Date.now() - fixAt);
+    if (remaining <= 0) {
+      setLocationStatus("stale");
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setLocationStatus("stale");
+    }, remaining);
+
+    return () => window.clearTimeout(timer);
+  }, [locationStatus, isOnline, currentLat, currentLng]);
+
+  useEffect(() => {
     const clearLocationWatch = () => {
       if (
         locationWatchIdRef.current != null &&
@@ -619,16 +764,23 @@ export function useMessengerOperationalState() {
       !user ||
       user.appRole !== "MENSAJERO" ||
       !isOnline ||
+      !gpsBootstrapReady ||
       !actorId ||
       !isValidUuid(actorId)
     ) {
       clearLocationWatch();
+      if (!isOnline) {
+        clearOperationalGps();
+        setLocationStatus("unknown");
+        setGpsBootstrapReady(false);
+      }
       return () => {
         clearLocationWatch();
       };
     }
 
     if (!navigator.geolocation) {
+      setLocationStatus("unavailable");
       return () => {
         clearLocationWatch();
       };
@@ -641,16 +793,16 @@ export function useMessengerOperationalState() {
     };
 
     const onSuccess = (position: GeolocationPosition) => {
-      const lat = position.coords.latitude;
-      const lng = position.coords.longitude;
-      lastHeartbeatLatRef.current = lat;
-      lastHeartbeatLngRef.current = lng;
-      setCurrentLat(lat);
-      setCurrentLng(lng);
+      applyOperationalLocationFix(
+        position.coords.latitude,
+        position.coords.longitude,
+      );
     };
 
     const onError = (error: GeolocationPositionError) => {
       console.warn("[messenger-location]", error);
+      clearOperationalGps();
+      setLocationStatus(resolveGeolocationErrorStatus(error));
     };
 
     locationWatchIdRef.current = navigator.geolocation.watchPosition(
@@ -662,7 +814,56 @@ export function useMessengerOperationalState() {
     return () => {
       clearLocationWatch();
     };
-  }, [loading, isOnline, actorId, user]);
+  }, [
+    loading,
+    isOnline,
+    gpsBootstrapReady,
+    actorId,
+    user,
+    applyOperationalLocationFix,
+    clearOperationalGps,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    if (
+      loading ||
+      !user ||
+      user.appRole !== "MENSAJERO" ||
+      !isOnline ||
+      !actorId ||
+      !isValidUuid(actorId)
+    ) {
+      gpsBootstrapCancelRef.current?.();
+      gpsBootstrapCancelRef.current = null;
+      setGpsBootstrapReady(false);
+      return;
+    }
+
+    void syncGeolocationPermissionState();
+    const cancel = runGpsBootstrap();
+
+    return () => {
+      cancel();
+      if (gpsBootstrapCancelRef.current === cancel) {
+        gpsBootstrapCancelRef.current = null;
+      }
+    };
+  }, [
+    loading,
+    isOnline,
+    actorId,
+    user,
+    runGpsBootstrap,
+    syncGeolocationPermissionState,
+  ]);
+
+  useEffect(() => {
+    if (!isOnline) return;
+    if (locationStatus !== "denied" && locationStatus !== "unavailable") return;
+    void syncGeolocationPermissionState();
+  }, [isOnline, locationStatus, syncGeolocationPermissionState]);
 
   useEffect(() => {
     const clearHeartbeatTimer = () => {
@@ -683,6 +884,7 @@ export function useMessengerOperationalState() {
       !user ||
       user.appRole !== "MENSAJERO" ||
       !isOnline ||
+      !gpsBootstrapReady ||
       !actorId ||
       !isValidUuid(actorId)
     ) {
@@ -713,16 +915,20 @@ export function useMessengerOperationalState() {
           payload.availability_status = availability_status;
         }
 
-        const lat = lastHeartbeatLatRef.current;
-        const lng = lastHeartbeatLngRef.current;
-        if (
-          lat != null &&
-          lng != null &&
-          Number.isFinite(lat) &&
-          Number.isFinite(lng)
-        ) {
-          payload.lat = lat;
-          payload.lng = lng;
+        if (isLocationFresh(lastLocationFixAtRef.current)) {
+          const lat = lastHeartbeatLatRef.current;
+          const lng = lastHeartbeatLngRef.current;
+          if (
+            lat != null &&
+            lng != null &&
+            Number.isFinite(lat) &&
+            Number.isFinite(lng)
+          ) {
+            payload.lat = lat;
+            payload.lng = lng;
+          }
+        } else if (lastLocationFixAtRef.current != null) {
+          setLocationStatus("stale");
         }
 
         if (battery_level != null) {
@@ -743,7 +949,7 @@ export function useMessengerOperationalState() {
     return () => {
       clearHeartbeatTimer();
     };
-  }, [loading, isOnline, actorId, user]);
+  }, [loading, isOnline, gpsBootstrapReady, actorId, user]);
 
   const wsOfferDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -1367,6 +1573,8 @@ export function useMessengerOperationalState() {
     setEvidenceNote,
     currentLat,
     currentLng,
+    locationStatus,
+    locationPermissionState,
     locationRequested,
     showFullQueues,
     setShowFullQueues,
@@ -1402,6 +1610,7 @@ export function useMessengerOperationalState() {
     handleCancelService,
     handleReportIncident,
     handleRequestLocation,
+    requestLocationPermission,
     clearEvidenceDraft,
     handleSelectEvidenceFile,
     uploadEvidenceForService,
