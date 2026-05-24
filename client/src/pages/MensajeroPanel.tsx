@@ -14,7 +14,11 @@ import {
   type ServiceStatus,
 } from "@/hooks/useMessengerOperationalState";
 import { OperationalParticipantCard } from "@/components/OperationalParticipantCard";
-import { formatServiceRouteEndpoint } from "@/lib/formatOperationalLocation";
+import { RouteNavigationLinks } from "@/components/RouteNavigationLinks";
+import {
+  formatServiceRouteEndpoint,
+  parseServiceRouteCoords,
+} from "@/lib/formatOperationalLocation";
 import {
   Package,
   MapPin,
@@ -380,6 +384,10 @@ function OfferView(props: {
           <p className="text-base font-medium text-gray-900 mt-1">
             {getOrigin(props.offer)}
           </p>
+          <RouteNavigationLinks
+            coords={parseServiceRouteCoords(props.offer, "origin")}
+            labelPrefix="Recoger"
+          />
         </div>
 
         <div>
@@ -387,6 +395,10 @@ function OfferView(props: {
           <p className="text-base font-medium text-gray-900 mt-1">
             {getDestination(props.offer)}
           </p>
+          <RouteNavigationLinks
+            coords={parseServiceRouteCoords(props.offer, "destination")}
+            labelPrefix="Entregar"
+          />
         </div>
 
         <OperationalParticipantCard
@@ -440,12 +452,20 @@ function AssignedView(props: {
             <p className="mt-1 text-base font-medium text-gray-900">
               {getOrigin(props.service)}
             </p>
+            <RouteNavigationLinks
+              coords={parseServiceRouteCoords(props.service, "origin")}
+              labelPrefix="Recoger"
+            />
           </div>
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Entregar en</p>
             <p className="mt-1 text-base font-medium text-gray-900">
               {getDestination(props.service)}
             </p>
+            <RouteNavigationLinks
+              coords={parseServiceRouteCoords(props.service, "destination")}
+              labelPrefix="Entregar"
+            />
           </div>
         </div>
 
@@ -525,12 +545,20 @@ function InServiceView(props: {
             <p className="mt-1 text-base font-medium text-gray-900">
               {getOrigin(props.service)}
             </p>
+            <RouteNavigationLinks
+              coords={parseServiceRouteCoords(props.service, "origin")}
+              labelPrefix="Recoger"
+            />
           </div>
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Entregar en</p>
             <p className="mt-1 text-base font-medium text-gray-900">
               {getDestination(props.service)}
             </p>
+            <RouteNavigationLinks
+              coords={parseServiceRouteCoords(props.service, "destination")}
+              labelPrefix="Entregar"
+            />
           </div>
         </div>
 

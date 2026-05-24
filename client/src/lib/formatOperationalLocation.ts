@@ -33,6 +33,75 @@ function toOptionalString(value: unknown): string | null {
   return s.length > 0 ? s : null;
 }
 
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+/** Ubicación operativa con coords preservadas (lectura API / ofertas). */
+export function parseRouteLocation(raw: unknown): OpsServiceLocation | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const rec = raw as Record<string, unknown>;
+
+  const label =
+    toOptionalString(rec.label) ??
+    toOptionalString(rec.name) ??
+    toOptionalString(rec.address_text);
+  const sub_location =
+    toOptionalString(rec.sub_location) ?? toOptionalString(rec.subLocation);
+  const lat = toFiniteNumber(rec.lat);
+  const lng = toFiniteNumber(rec.lng);
+
+  const nodeRaw = rec.node;
+  let node_id: string | null = toOptionalString(rec.node_id) ?? toOptionalString(rec.nodeId);
+  let node: OpsServiceLocation["node"] = null;
+  if (nodeRaw && typeof nodeRaw === "object" && !Array.isArray(nodeRaw)) {
+    const nodeRec = nodeRaw as Record<string, unknown>;
+    node_id = node_id ?? toOptionalString(nodeRec.node_id) ?? toOptionalString(nodeRec.nodeId);
+    const code = toOptionalString(nodeRec.code);
+    const name = toOptionalString(nodeRec.name);
+    if (node_id || code || name) {
+      node = { node_id, code, name };
+    }
+  }
+
+  if (!label && !sub_location && lat == null && lng == null && !node_id && !node) {
+    return null;
+  }
+
+  return { label, sub_location, lat, lng, node };
+}
+
+export function parseServiceRouteCoords(
+  service: unknown,
+  which: "origin" | "destination",
+): { lat: number; lng: number } | null {
+  if (!service || typeof service !== "object" || Array.isArray(service)) return null;
+  const rec = service as Record<string, unknown>;
+
+  const fromEndpoint = parseRouteLocation(rec[which]);
+  if (
+    fromEndpoint?.lat != null &&
+    fromEndpoint?.lng != null &&
+    Number.isFinite(fromEndpoint.lat) &&
+    Number.isFinite(fromEndpoint.lng)
+  ) {
+    return { lat: fromEndpoint.lat, lng: fromEndpoint.lng };
+  }
+
+  const latKey = which === "origin" ? "origin_lat" : "destination_lat";
+  const lngKey = which === "origin" ? "origin_lng" : "destination_lng";
+  const lat = toFiniteNumber(rec[latKey]);
+  const lng = toFiniteNumber(rec[lngKey]);
+  if (lat != null && lng != null) return { lat, lng };
+
+  return null;
+}
+
 export function locationFromUnknown(value: unknown): OpsServiceLocation | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const rec = value as Record<string, unknown>;

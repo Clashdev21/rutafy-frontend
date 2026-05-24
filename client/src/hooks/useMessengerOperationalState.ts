@@ -6,11 +6,13 @@ import {
   patchMessengerAvailability,
   postMessengerHeartbeat,
 } from "@/api/services";
+import type { OpsServiceLocation } from "@/api/admin-ops-service";
 import { getToken } from "@/authStorage";
 import {
   formatLabelWithSubLocation,
   formatOperationalLocation,
   locationFromUnknown,
+  parseRouteLocation,
   pickRouteSubLocation,
 } from "@/lib/formatOperationalLocation";
 import {
@@ -45,8 +47,8 @@ export interface BackendService {
   start_code?: string | null;
   close_code?: string | null;
   meta?: Record<string, any> | null;
-  origin?: string | null;
-  destination?: string | null;
+  origin?: string | OpsServiceLocation | null;
+  destination?: string | OpsServiceLocation | null;
   expires_at?: string | null;
   created_at?: string;
   updated_at?: string;
@@ -63,8 +65,8 @@ type DispatchOfferLike = {
   service_type?: string;
   requester_company_id?: string;
   mensajero_id?: string | null;
-  origin?: string | null;
-  destination?: string | null;
+  origin?: string | OpsServiceLocation | null;
+  destination?: string | OpsServiceLocation | null;
   expires_at?: string | null;
   meta?: Record<string, any> | null;
   created_at?: string;
@@ -322,33 +324,27 @@ function resolveRouteEndpoint(
   return combined || null;
 }
 
-function resolveOfferOriginDestination(
+function resolveOfferRouteField(
   offer: DispatchOfferLike,
   nested: Partial<BackendService> | null,
-  mergedMeta: Record<string, any> | null
-): { origin: string | null; destination: string | null } {
+  mergedMeta: Record<string, any> | null,
+  textKeys: readonly string[],
+  which: "origin" | "destination",
+): string | OpsServiceLocation | null {
   const nestedRec = nested as Record<string, any> | null;
   const offerRec = offer as Record<string, any>;
+  const primaryRaw = nestedRec?.[which] ?? offerRec[which];
+  const parsed = parseRouteLocation(primaryRaw);
+  if (parsed) return parsed;
 
-  const metaObj = mergedMeta && Object.keys(mergedMeta).length ? mergedMeta : null;
-
-  const origin = resolveRouteEndpoint(
+  const text = resolveRouteEndpoint(
     nestedRec,
     offerRec,
-    metaObj,
-    OFFER_ORIGIN_TEXT_KEYS,
-    "origin",
+    mergedMeta && Object.keys(mergedMeta).length ? mergedMeta : null,
+    textKeys,
+    which,
   );
-
-  const destination = resolveRouteEndpoint(
-    nestedRec,
-    offerRec,
-    metaObj,
-    OFFER_DESTINATION_TEXT_KEYS,
-    "destination",
-  );
-
-  return { origin, destination };
+  return text || null;
 }
 
 function resolveServiceRequester(
@@ -388,7 +384,20 @@ function mapOfferToBackendService(offer: DispatchOfferLike): BackendService | nu
   const status = String(nested?.status ?? offer.status ?? "REQUESTED").toUpperCase() as ServiceStatus;
 
   const mergedMeta = mergeOfferMetas(offer, nested);
-  const { origin, destination } = resolveOfferOriginDestination(offer, nested, mergedMeta);
+  const origin = resolveOfferRouteField(
+    offer,
+    nested,
+    mergedMeta,
+    OFFER_ORIGIN_TEXT_KEYS,
+    "origin",
+  );
+  const destination = resolveOfferRouteField(
+    offer,
+    nested,
+    mergedMeta,
+    OFFER_DESTINATION_TEXT_KEYS,
+    "destination",
+  );
   const requester = resolveServiceRequester(offer, nested);
 
   return {
