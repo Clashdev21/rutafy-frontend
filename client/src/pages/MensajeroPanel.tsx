@@ -13,6 +13,7 @@ import {
   type ServiceEvidence,
   type ServiceStatus,
 } from "@/hooks/useMessengerOperationalState";
+import { MessengerRouteMap } from "@/components/MessengerRouteMap";
 import { OperationalParticipantCard } from "@/components/OperationalParticipantCard";
 import { RouteNavigationLinks } from "@/components/RouteNavigationLinks";
 import {
@@ -75,6 +76,19 @@ function getDestination(service: BackendService): string {
     "destination",
     "Destino no definido",
   );
+}
+
+type MessengerMapPosition = { lat: number; lng: number };
+
+function resolveMessengerMapPosition(
+  locationStatus: OperationalLocationStatus,
+  currentLat: number | null,
+  currentLng: number | null,
+): MessengerMapPosition | null {
+  if (locationStatus !== "fresh") return null;
+  if (currentLat == null || currentLng == null) return null;
+  if (!Number.isFinite(currentLat) || !Number.isFinite(currentLng)) return null;
+  return { lat: currentLat, lng: currentLng };
 }
 
 function getServiceTypeLabel(serviceType: string): string {
@@ -304,6 +318,7 @@ function AvailableView(props: {
 
 function OfferView(props: {
   offer: BackendService;
+  messengerPosition: MessengerMapPosition | null;
   onAccept: () => Promise<void> | void;
   isAccepting: boolean;
   onOmit?: () => void;
@@ -379,6 +394,11 @@ function OfferView(props: {
       </div>
 
       <div className="flex-1 px-6 py-6 space-y-6">
+        <MessengerRouteMap
+          service={props.offer}
+          messengerPosition={props.messengerPosition}
+        />
+
         <div>
           <p className="text-xs uppercase tracking-wide text-gray-400">Recoger en</p>
           <p className="text-base font-medium text-gray-900 mt-1">
@@ -431,6 +451,7 @@ function OfferView(props: {
 
 function AssignedView(props: {
   service: BackendService;
+  messengerPosition: MessengerMapPosition | null;
   onStart: () => Promise<void> | void;
   isStarting: boolean;
 }) {
@@ -447,6 +468,11 @@ function AssignedView(props: {
         <h1 className="text-2xl font-bold text-gray-900">Servicio asignado</h1>
 
         <div className="space-y-5 rounded-xl border border-orange-100 bg-white p-5 shadow-sm">
+          <MessengerRouteMap
+            service={props.service}
+            messengerPosition={props.messengerPosition}
+          />
+
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Recoger en</p>
             <p className="mt-1 text-base font-medium text-gray-900">
@@ -502,6 +528,7 @@ function AssignedView(props: {
 
 function InServiceView(props: {
   service: BackendService;
+  messengerPosition: MessengerMapPosition | null;
   setSelectedService: Dispatch<SetStateAction<BackendService | null>>;
   closePin: string;
   setClosePin: Dispatch<SetStateAction<string>>;
@@ -540,6 +567,11 @@ function InServiceView(props: {
         <h1 className="text-2xl font-bold text-gray-900">Servicio en curso</h1>
 
         <div className="space-y-5 rounded-xl border border-green-200 bg-white p-5 shadow-sm">
+          <MessengerRouteMap
+            service={props.service}
+            messengerPosition={props.messengerPosition}
+          />
+
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Recoger en</p>
             <p className="mt-1 text-base font-medium text-gray-900">
@@ -797,6 +829,12 @@ export default function MensajeroPanel() {
     handleCloseService,
   } = op;
 
+  const messengerMapPosition = resolveMessengerMapPosition(
+    locationStatus,
+    currentLat,
+    currentLng,
+  );
+
   if (uiState === "OFFLINE") {
     return <OfflineView onToggle={() => void handleToggleAvailability()} />;
   }
@@ -815,6 +853,7 @@ export default function MensajeroPanel() {
     return (
       <OfferView
         offer={firstOffer}
+        messengerPosition={messengerMapPosition}
         onAccept={() => handleAcceptService(firstOffer.service_id, firstOffer)}
         isAccepting={claimingServiceId === firstOffer.service_id}
         onOmit={handleOmitCurrentOffer}
@@ -825,6 +864,7 @@ export default function MensajeroPanel() {
     return (
       <AssignedView
         service={dispatchCurrentService}
+        messengerPosition={messengerMapPosition}
         onStart={() => handleStartService(dispatchCurrentService)}
         isStarting={startingServiceId === dispatchCurrentService.service_id}
       />
@@ -834,6 +874,7 @@ export default function MensajeroPanel() {
     return (
       <InServiceView
         service={dispatchCurrentService}
+        messengerPosition={messengerMapPosition}
         setSelectedService={setSelectedService}
         closePin={closePin}
         setClosePin={setClosePin}
