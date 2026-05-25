@@ -4,7 +4,7 @@ import { MapView } from "@/components/Map";
 import type { BackendService } from "@/hooks/useMessengerOperationalState";
 import { parseServiceRouteCoords } from "@/lib/formatOperationalLocation";
 import { cn } from "@/lib/utils";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const COLOR_MESSENGER = "#2563eb";
 const COLOR_PICKUP = "#16a34a";
@@ -33,11 +33,26 @@ export type MessengerRouteMapProps = {
   className?: string;
 };
 
+function isGoogleMapsApiAvailable(): boolean {
+  if (typeof window === "undefined") return false;
+  const g = window.google;
+  if (!g?.maps) return false;
+  if (typeof g.maps.Map !== "function") return false;
+  if (typeof g.maps.LatLngBounds !== "function") return false;
+  return true;
+}
+
 function canUseAdvancedMarkers(): boolean {
+  if (!isGoogleMapsApiAvailable()) return false;
   return Boolean(
-    typeof window !== "undefined" &&
-      window.google?.maps?.marker?.AdvancedMarkerElement,
+    window.google?.maps?.marker?.AdvancedMarkerElement &&
+      typeof window.google.maps.marker.AdvancedMarkerElement === "function",
   );
+}
+
+function canUseClassicMarkers(): boolean {
+  if (!isGoogleMapsApiAvailable()) return false;
+  return typeof window.google?.maps?.Marker === "function";
 }
 
 function createPinElement(label: string, color: string): HTMLDivElement {
@@ -61,85 +76,115 @@ function createPinElement(label: string, color: string): HTMLDivElement {
 
 function detachMarker(entry: MarkerEntry | null): void {
   if (!entry) return;
-  const marker = entry.marker;
-  if ("setMap" in marker && typeof marker.setMap === "function") {
-    (marker as google.maps.Marker).setMap(null);
-    return;
+  try {
+    const marker = entry.marker;
+    if ("setMap" in marker && typeof marker.setMap === "function") {
+      (marker as google.maps.Marker).setMap(null);
+      return;
+    }
+    (marker as google.maps.marker.AdvancedMarkerElement).map = null;
+  } catch {
+    /* evitar fallo en cleanup */
   }
-  (marker as google.maps.marker.AdvancedMarkerElement).map = null;
 }
 
 function createRouteMarker(
   map: google.maps.Map,
   position: LatLng,
   kind: RouteMarkerKind,
-): MarkerEntry {
-  const config: Record<
-    RouteMarkerKind,
-    { label: string; title: string; color: string; zIndex: number }
-  > = {
-    messenger: { label: "Tú", title: "Tu ubicación", color: COLOR_MESSENGER, zIndex: 10003 },
-    pickup: { label: "R", title: "Recoger", color: COLOR_PICKUP, zIndex: 10001 },
-    delivery: { label: "E", title: "Entregar", color: COLOR_DELIVERY, zIndex: 10002 },
-  };
-  const { label, title, color, zIndex } = config[kind];
+): MarkerEntry | null {
+  try {
+    if (!isGoogleMapsApiAvailable()) return null;
 
-  if (canUseAdvancedMarkers()) {
-    return {
-      marker: new window.google!.maps!.marker!.AdvancedMarkerElement({
-        map,
-        position,
-        title,
-        content: createPinElement(label, color),
-        zIndex,
-      }),
-    };
-  }
-
-  return {
-    marker: new google.maps.Marker({
-      map,
-      position,
-      title,
-      label: { text: label, color: "white", fontWeight: "bold" },
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 14,
-        fillColor: color,
-        fillOpacity: 1,
-        strokeColor: "#ffffff",
-        strokeWeight: 2,
+    const config: Record<
+      RouteMarkerKind,
+      { label: string; title: string; color: string; zIndex: number }
+    > = {
+      messenger: {
+        label: "Tú",
+        title: "Tu ubicación",
+        color: COLOR_MESSENGER,
+        zIndex: 10003,
       },
-      zIndex,
-    }),
-  };
+      pickup: { label: "R", title: "Recoger", color: COLOR_PICKUP, zIndex: 10001 },
+      delivery: { label: "E", title: "Entregar", color: COLOR_DELIVERY, zIndex: 10002 },
+    };
+    const { label, title, color, zIndex } = config[kind];
+
+    if (canUseAdvancedMarkers()) {
+      const AdvancedMarkerElement = window.google!.maps!.marker!
+        .AdvancedMarkerElement;
+      return {
+        marker: new AdvancedMarkerElement({
+          map,
+          position,
+          title,
+          content: createPinElement(label, color),
+          zIndex,
+        }),
+      };
+    }
+
+    if (canUseClassicMarkers()) {
+      return {
+        marker: new window.google!.maps!.Marker({
+          map,
+          position,
+          title,
+          label: { text: label, color: "white", fontWeight: "bold" },
+          icon: {
+            path: window.google!.maps!.SymbolPath.CIRCLE,
+            scale: 14,
+            fillColor: color,
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+          },
+          zIndex,
+        }),
+      };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function clearOverlay(
   overlayRef: React.MutableRefObject<OverlayState>,
   polylineRef: React.MutableRefObject<google.maps.Polyline | null>,
 ): void {
-  detachMarker(overlayRef.current.messenger);
-  detachMarker(overlayRef.current.pickup);
-  detachMarker(overlayRef.current.delivery);
-  overlayRef.current = { messenger: null, pickup: null, delivery: null };
+  try {
+    detachMarker(overlayRef.current.messenger);
+    detachMarker(overlayRef.current.pickup);
+    detachMarker(overlayRef.current.delivery);
+    overlayRef.current = { messenger: null, pickup: null, delivery: null };
 
-  if (polylineRef.current) {
-    polylineRef.current.setMap(null);
+    if (polylineRef.current) {
+      polylineRef.current.setMap(null);
+      polylineRef.current = null;
+    }
+  } catch {
+    overlayRef.current = { messenger: null, pickup: null, delivery: null };
     polylineRef.current = null;
   }
 }
 
 function fitMapToPoints(map: google.maps.Map, points: LatLng[]): void {
-  if (points.length === 0) return;
-  if (points.length === 1) {
-    map.setCenter(points[0]);
-    map.setZoom(15);
-    return;
+  if (!isGoogleMapsApiAvailable() || points.length === 0) return;
+  try {
+    if (points.length === 1) {
+      map.setCenter(points[0]);
+      map.setZoom(15);
+      return;
+    }
+    const bounds = new window.google!.maps!.LatLngBounds();
+    for (const p of points) bounds.extend(p);
+    map.fitBounds(bounds, 48);
+  } catch {
+    /* bounds opcional */
   }
-  const bounds = new google.maps.LatLngBounds();
-  for (const p of points) bounds.extend(p);
-  map.fitBounds(bounds, 48);
 }
 
 function syncRouteOverlay(
@@ -150,27 +195,37 @@ function syncRouteOverlay(
   overlayRef: React.MutableRefObject<OverlayState>,
   polylineRef: React.MutableRefObject<google.maps.Polyline | null>,
 ): void {
+  if (!isGoogleMapsApiAvailable()) {
+    throw new Error("Google Maps API not available");
+  }
+
   clearOverlay(overlayRef, polylineRef);
 
   const fitPoints: LatLng[] = [];
 
   if (pickup) {
-    overlayRef.current.pickup = createRouteMarker(map, pickup, "pickup");
+    const entry = createRouteMarker(map, pickup, "pickup");
+    if (!entry) throw new Error("pickup marker failed");
+    overlayRef.current.pickup = entry;
     fitPoints.push(pickup);
   }
 
   if (delivery) {
-    overlayRef.current.delivery = createRouteMarker(map, delivery, "delivery");
+    const entry = createRouteMarker(map, delivery, "delivery");
+    if (!entry) throw new Error("delivery marker failed");
+    overlayRef.current.delivery = entry;
     fitPoints.push(delivery);
   }
 
   if (messenger) {
-    overlayRef.current.messenger = createRouteMarker(map, messenger, "messenger");
+    const entry = createRouteMarker(map, messenger, "messenger");
+    if (!entry) throw new Error("messenger marker failed");
+    overlayRef.current.messenger = entry;
     fitPoints.push(messenger);
   }
 
-  if (pickup && delivery) {
-    polylineRef.current = new google.maps.Polyline({
+  if (pickup && delivery && typeof window.google?.maps?.Polyline === "function") {
+    polylineRef.current = new window.google.maps.Polyline({
       map,
       path: [pickup, delivery],
       geodesic: true,
@@ -183,7 +238,12 @@ function syncRouteOverlay(
   }
 
   fitMapToPoints(map, fitPoints);
-  google.maps.event.trigger(map, "resize");
+
+  try {
+    window.google?.maps?.event?.trigger(map, "resize");
+  } catch {
+    /* resize opcional */
+  }
 }
 
 function RouteMapLegend(props: {
@@ -215,6 +275,17 @@ function RouteMapLegend(props: {
   );
 }
 
+function MapLoadFallback() {
+  return (
+    <div
+      className="flex h-48 w-full items-center justify-center rounded-xl border border-slate-200/80 bg-slate-50 px-4 text-center text-sm text-slate-500"
+      role="status"
+    >
+      No se pudo cargar el mapa
+    </div>
+  );
+}
+
 export function MessengerRouteMap({
   service,
   messengerPosition,
@@ -234,6 +305,7 @@ export function MessengerRouteMap({
     delivery: null,
   });
   const polylineRef = useRef<google.maps.Polyline | null>(null);
+  const [overlayFailed, setOverlayFailed] = useState(false);
 
   const pickupKey = pickup ? `${pickup.lat},${pickup.lng}` : "";
   const deliveryKey = delivery ? `${delivery.lat},${delivery.lng}` : "";
@@ -243,15 +315,23 @@ export function MessengerRouteMap({
 
   const applyOverlay = useCallback(() => {
     const map = mapRef.current;
-    if (!map || !window.google?.maps) return;
-    syncRouteOverlay(
-      map,
-      pickup,
-      delivery,
-      messengerPosition,
-      overlayRef,
-      polylineRef,
-    );
+    if (!map) return;
+
+    try {
+      syncRouteOverlay(
+        map,
+        pickup,
+        delivery,
+        messengerPosition,
+        overlayRef,
+        polylineRef,
+      );
+      setOverlayFailed(false);
+    } catch (error) {
+      console.warn("[MessengerRouteMap] map overlay failed", error);
+      clearOverlay(overlayRef, polylineRef);
+      setOverlayFailed(true);
+    }
   }, [pickupKey, deliveryKey, messengerKey, pickup, delivery, messengerPosition]);
 
   useEffect(() => {
@@ -268,7 +348,13 @@ export function MessengerRouteMap({
   const handleMapReady = useCallback(
     (map: google.maps.Map) => {
       mapRef.current = map;
-      applyOverlay();
+      try {
+        applyOverlay();
+      } catch (error) {
+        console.warn("[MessengerRouteMap] map overlay failed", error);
+        clearOverlay(overlayRef, polylineRef);
+        setOverlayFailed(true);
+      }
     },
     [applyOverlay],
   );
@@ -280,12 +366,16 @@ export function MessengerRouteMap({
 
   return (
     <div className={cn("w-full", className)}>
-      <MapView
-        className="h-48 w-full rounded-xl overflow-hidden border border-slate-200/80"
-        initialCenter={initialCenter}
-        initialZoom={14}
-        onMapReady={handleMapReady}
-      />
+      {overlayFailed ? (
+        <MapLoadFallback />
+      ) : (
+        <MapView
+          className="h-48 w-full rounded-xl overflow-hidden border border-slate-200/80"
+          initialCenter={initialCenter}
+          initialZoom={14}
+          onMapReady={handleMapReady}
+        />
+      )}
       <RouteMapLegend
         showMessenger={messengerPosition != null}
         showPickup={pickup != null}
