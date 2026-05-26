@@ -4,7 +4,7 @@
  *
  * El token va en query por limitación del API WebSocket del navegador (sin headers custom).
  */
-export function buildMessengerRealtimeWebSocketUrl(accessToken: string): string | null {
+export function buildRutafyRealtimeWebSocketUrl(accessToken: string): string | null {
   const trimmed = accessToken.trim();
   if (!trimmed) return null;
 
@@ -35,3 +35,6 @@ export function buildMessengerRealtimeWebSocketUrl(accessToken: string): string 
     return null;
   }
 }
+
+/** @deprecated Use buildRutafyRealtimeWebSocketUrl — alias para compatibilidad con mensajero. */
+export const buildMessengerRealtimeWebSocketUrl = buildRutafyRealtimeWebSocketUrl;

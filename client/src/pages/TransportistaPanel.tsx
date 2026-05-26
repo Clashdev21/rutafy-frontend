@@ -2,6 +2,8 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { http } from "@/api/http";
 import { cancelServiceByTransportista, createService } from "@/api/services";
 import { useTransportistaOperationalState } from "@/hooks/useTransportistaOperationalState";
+import { useTransportistaRealtime } from "@/hooks/useTransportistaRealtime";
+import { getToken } from "@/authStorage";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1355,6 +1357,7 @@ type TransportistaHomeViewProps = {
   isCreatingNow: boolean;
   isCreatingScheduled: boolean;
   originLocationCaptureStatus: OriginLocationCaptureStatus;
+  activeGeofenceState: "AT_PICKUP" | "AT_DROPOFF" | null;
   manualAddressModal: "origin" | "destination" | null;
   manualAddressDraft: string;
   setManualAddressDraft: (value: string) => void;
@@ -1409,6 +1412,7 @@ function TransportistaHomeView(props: TransportistaHomeViewProps) {
     isCreatingNow,
     isCreatingScheduled,
     originLocationCaptureStatus,
+    activeGeofenceState,
     manualAddressModal,
     manualAddressDraft,
     setManualAddressDraft,
@@ -1466,13 +1470,13 @@ function TransportistaHomeView(props: TransportistaHomeViewProps) {
               onCancel={() => void onCancelService(activeService)}
               canCancel={isTransportistaCancelableServiceStatus(activeService.status)}
               isCancelling={cancellingServiceId === activeService.id}
-              geofenceState={null}
+              geofenceState={activeGeofenceState}
             />
           ) : isInProgress && activeService ? (
             <InProgressServiceView
               activeService={activeService}
               closePin={activeClosePin}
-              geofenceState={null}
+              geofenceState={activeGeofenceState}
             />
           ) : isCompleted && activeService ? (
             <CompletedServiceView activeService={activeService} onNewService={handleReturnToIdle} />
@@ -1997,6 +2001,13 @@ export default function TransportistaPanel() {
     isCompleted,
     isCancelled,
   } = useTransportistaOperationalState(myServices, activeService);
+
+  const transportistaRealtimeToken = getToken();
+  const { activeGeofenceState } = useTransportistaRealtime({
+    enabled: !loading && Boolean(user) && user?.appRole === "TRANSPORTISTA",
+    token: transportistaRealtimeToken,
+    activeServiceId: activeService?.id ?? null,
+  });
 
   useEffect(() => {
     console.debug("[transportista-operational-phase]", operationalPhase);
@@ -2575,6 +2586,7 @@ export default function TransportistaPanel() {
             isCreatingNow={isCreatingNow}
             isCreatingScheduled={isCreatingScheduled}
             originLocationCaptureStatus={originLocationCaptureStatus}
+            activeGeofenceState={activeGeofenceState}
             manualAddressModal={manualAddressModal}
             manualAddressDraft={manualAddressDraft}
             setManualAddressDraft={setManualAddressDraft}
