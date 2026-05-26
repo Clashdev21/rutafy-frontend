@@ -1560,6 +1560,7 @@ export function useMessengerOperationalState() {
 
   const handleCloseService = async () => {
     if (!selectedService) return;
+    if (closingServiceId === selectedService.service_id) return;
 
     if (!actorId) {
       setValidationError("No hay actor_id disponible para el mensajero");
@@ -1571,6 +1572,9 @@ export function useMessengerOperationalState() {
       return;
     }
 
+    const closingServiceIdValue = selectedService.service_id;
+    setClosingServiceId(closingServiceIdValue);
+
     const evidences = evidencesByService[selectedService.service_id] || [];
     if (evidences.length === 0) {
       const confirmed = window.confirm(
@@ -1578,13 +1582,12 @@ export function useMessengerOperationalState() {
       );
 
       if (!confirmed) {
+        setClosingServiceId(null);
         return;
       }
     }
 
     setValidationError("");
-    const closingServiceIdValue = selectedService.service_id;
-    setClosingServiceId(closingServiceIdValue);
 
     try {
       await jsonPost(`/v1/services/${closingServiceIdValue}/close`, {
