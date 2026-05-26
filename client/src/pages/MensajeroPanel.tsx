@@ -21,7 +21,6 @@ import {
   parseServiceRouteCoords,
 } from "@/lib/formatOperationalLocation";
 import {
-  formatOperationalEtaMinutes,
   resolveOperationalCopy,
   type OperationalGeofenceState,
 } from "@/lib/resolveOperationalCopy";
@@ -185,6 +184,7 @@ type BackendServiceWithEta = BackendService & {
   eta_delivery_at?: string | null;
   sla_pickup_deadline_at?: string | null;
   sla_delivery_deadline_at?: string | null;
+  estimated_route_duration_minutes?: number | string | null;
 };
 
 function OfflineView(props: { onToggle: () => void }) {
@@ -456,8 +456,7 @@ function AssignedView(props: {
   const copy = resolveOperationalCopy({
     serviceStatus: service.status,
     geofenceState: props.geofenceState,
-    etaPickupAt: service.eta_pickup_at,
-    etaMinutes: formatOperationalEtaMinutes(service.eta_pickup_at),
+    estimatedRouteDurationMinutes: service.estimated_route_duration_minutes,
     audience: "mensajero",
   });
 
@@ -557,8 +556,7 @@ function InServiceView(props: {
   const copy = resolveOperationalCopy({
     serviceStatus: serviceWithEta.status,
     geofenceState: props.geofenceState,
-    etaDeliveryAt: serviceWithEta.eta_delivery_at,
-    etaMinutes: formatOperationalEtaMinutes(serviceWithEta.eta_delivery_at),
+    estimatedRouteDurationMinutes: serviceWithEta.estimated_route_duration_minutes,
     audience: "mensajero",
   });
 

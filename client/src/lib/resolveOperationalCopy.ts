@@ -5,10 +5,8 @@ export type OperationalCopyAudience = "transportista" | "mensajero";
 export type ResolveOperationalCopyInput = {
   serviceStatus?: string | null;
   geofenceState?: OperationalGeofenceState | null;
-  /** Minutos formateados (p. ej. "8 min"); si se omite, se deriva de los ISO. */
-  etaMinutes?: string | null;
-  etaPickupAt?: string | null;
-  etaDeliveryAt?: string | null;
+  /** Duración estática de ruta (dispatch); no usar timestamps ISO para countdown. */
+  estimatedRouteDurationMinutes?: number | string | null;
   audience?: OperationalCopyAudience;
 };
 
@@ -18,6 +16,7 @@ export type OperationalCopy = {
   etaLabel: string | null;
 };
 
+/** Countdown hacia ISO; no usar en copy operacional principal. */
 export function formatOperationalEtaMinutes(iso?: string | null): string | null {
   if (iso == null || String(iso).trim() === "") return null;
   const targetMs = Date.parse(String(iso));
@@ -28,30 +27,38 @@ export function formatOperationalEtaMinutes(iso?: string | null): string | null 
   return `${Math.ceil(minutes)} min`;
 }
 
+/** Minutos fijos desde `estimated_route_duration_minutes` (sin Date.now()). */
+export function formatStaticRouteDurationMinutes(
+  value?: number | string | null,
+): string | null {
+  if (value == null || String(value).trim() === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const minutes = Math.ceil(n);
+  if (minutes < 1) return "menos de 1 min";
+  return `${minutes} min`;
+}
+
 function normalizeStatus(status: unknown): string {
   return String(status ?? "")
     .trim()
     .toUpperCase();
 }
 
-function withEtaPrefix(prefix: string, minutes: string | null | undefined): string | null {
+function withStaticOperationalEtaLabel(
+  prefix: string,
+  minutes: string | null | undefined,
+): string | null {
   const m = minutes?.trim();
   if (!m) return null;
   return `${prefix} ~${m}`;
-}
-
-function resolvePickupEtaMinutes(input: ResolveOperationalCopyInput): string | null {
-  return input.etaMinutes?.trim() || formatOperationalEtaMinutes(input.etaPickupAt);
-}
-
-function resolveDeliveryEtaMinutes(input: ResolveOperationalCopyInput): string | null {
-  return input.etaMinutes?.trim() || formatOperationalEtaMinutes(input.etaDeliveryAt);
 }
 
 /**
  * Copy operativo por fase (transportista / mensajero).
  * Geofence tiene prioridad cuando se conecte en tiempo real; sin geofence:
  * CLAIMED → camino a recogida, STARTED → camino a entrega.
+ * ETA numérico: solo duración estática de ruta, sin countdown.
  */
 export function resolveOperationalCopy(
   input: ResolveOperationalCopyInput,
@@ -60,8 +67,9 @@ export function resolveOperationalCopy(
   const geofence = input.geofenceState ?? null;
   const audience = input.audience ?? "transportista";
 
-  const pickupMinutes = resolvePickupEtaMinutes(input);
-  const deliveryMinutes = resolveDeliveryEtaMinutes(input);
+  const staticRouteMinutes = formatStaticRouteDurationMinutes(
+    input.estimatedRouteDurationMinutes,
+  );
 
   if (geofence === "AT_PICKUP") {
     return {
@@ -92,23 +100,24 @@ export function resolveOperationalCopy(
         audience === "mensajero"
           ? "Ve en camino al destino"
           : "El mensajero va en camino al destino",
-      etaLabel: withEtaPrefix("Entrega estimada en", deliveryMinutes),
+      etaLabel: withStaticOperationalEtaLabel(
+        "Tiempo estimado de trayecto:",
+        staticRouteMinutes,
+      ),
     };
   }
 
   if (status === "CLAIMED") {
-    const pickupEta =
-      audience === "mensajero"
-        ? withEtaPrefix("Llegarás al punto de recogida en", pickupMinutes)
-        : withEtaPrefix("Llegada al punto de recogida en", pickupMinutes);
-
     return {
       title: audience === "mensajero" ? "Servicio asignado" : "Mensajero asignado",
       subtitle:
         audience === "mensajero"
           ? "Dirígete al punto de recogida"
           : "El mensajero se dirige al punto de recogida",
-      etaLabel: pickupEta,
+      etaLabel: withStaticOperationalEtaLabel(
+        "Tiempo estimado hacia recogida:",
+        staticRouteMinutes,
+      ),
     };
   }
 

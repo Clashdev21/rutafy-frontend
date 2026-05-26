@@ -18,10 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OperationalParticipantCard } from "@/components/OperationalParticipantCard";
-import {
-  formatOperationalEtaMinutes,
-  resolveOperationalCopy,
-} from "@/lib/resolveOperationalCopy";
+import { resolveOperationalCopy } from "@/lib/resolveOperationalCopy";
 import { formatServiceRouteEndpoint } from "@/lib/formatOperationalLocation";
 import {
   normalizeOperationalParticipant,
@@ -1033,12 +1030,10 @@ function AssignedServiceView({
   geofenceState?: "AT_PICKUP" | "AT_DROPOFF" | null;
 }) {
   const pickupSlaBreached = isSlaDeadlineBreached(activeService.sla_pickup_deadline_at);
-  const pickupEtaMinutes = formatOperationalEtaMinutes(activeService.eta_pickup_at);
   const copy = resolveOperationalCopy({
     serviceStatus: activeService.status,
     geofenceState,
-    etaPickupAt: activeService.eta_pickup_at,
-    etaMinutes: pickupEtaMinutes,
+    estimatedRouteDurationMinutes: activeService.estimated_route_duration_minutes,
     audience: "transportista",
   });
 
@@ -1139,12 +1134,10 @@ function InProgressServiceView({
   geofenceState?: "AT_PICKUP" | "AT_DROPOFF" | null;
 }) {
   const deliverySlaBreached = isSlaDeadlineBreached(activeService.sla_delivery_deadline_at);
-  const deliveryEtaMinutes = formatOperationalEtaMinutes(activeService.eta_delivery_at);
   const copy = resolveOperationalCopy({
     serviceStatus: activeService.status,
     geofenceState,
-    etaDeliveryAt: activeService.eta_delivery_at,
-    etaMinutes: deliveryEtaMinutes,
+    estimatedRouteDurationMinutes: activeService.estimated_route_duration_minutes,
     audience: "transportista",
   });
 
