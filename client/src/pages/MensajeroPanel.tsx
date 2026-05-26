@@ -21,6 +21,11 @@ import {
   parseServiceRouteCoords,
 } from "@/lib/formatOperationalLocation";
 import {
+  formatOperationalEtaMinutes,
+  resolveOperationalCopy,
+  type OperationalGeofenceState,
+} from "@/lib/resolveOperationalCopy";
+import {
   Package,
   MapPin,
   History,
@@ -165,16 +170,6 @@ function formatDateTime(value?: string | null): string {
   } catch {
     return value;
   }
-}
-
-function formatMinutesUntil(iso?: string | null): string | null {
-  if (iso == null || String(iso).trim() === "") return null;
-  const targetMs = Date.parse(String(iso));
-  if (!Number.isFinite(targetMs)) return null;
-  const minutes = (targetMs - Date.now()) / 60_000;
-  if (minutes <= 0) return null;
-  if (minutes < 1) return "menos de 1 min";
-  return `${Math.ceil(minutes)} min`;
 }
 
 function isSlaDeadlineBreached(deadlineIso?: string | null): boolean {
@@ -454,13 +449,17 @@ function AssignedView(props: {
   messengerPosition: MessengerMapPosition | null;
   onStart: () => Promise<void> | void;
   isStarting: boolean;
+  geofenceState?: OperationalGeofenceState | null;
 }) {
   const service = props.service as BackendServiceWithEta;
   const pickupSlaBreached = isSlaDeadlineBreached(service.sla_pickup_deadline_at);
-  const pickupEtaLabel =
-    !pickupSlaBreached && service.eta_pickup_at != null
-      ? formatMinutesUntil(service.eta_pickup_at)
-      : null;
+  const copy = resolveOperationalCopy({
+    serviceStatus: service.status,
+    geofenceState: props.geofenceState,
+    etaPickupAt: service.eta_pickup_at,
+    etaMinutes: formatOperationalEtaMinutes(service.eta_pickup_at),
+    audience: "mensajero",
+  });
 
   return (
     <div className="min-h-screen bg-orange-50 flex flex-col px-6 py-6">
@@ -507,10 +506,8 @@ function AssignedView(props: {
           >
             Recogida retrasada
           </p>
-        ) : pickupEtaLabel ? (
-          <p className="text-sm font-medium text-amber-900/90 text-center">
-            Llegas al punto aprox. en {pickupEtaLabel}
-          </p>
+        ) : copy.etaLabel ? (
+          <p className="text-sm font-medium text-amber-900/90 text-center">{copy.etaLabel}</p>
         ) : null}
 
         <Button
@@ -543,6 +540,7 @@ function InServiceView(props: {
   evidenceFile: File | null;
   evidencePreviewUrl: string | null;
   uploadingEvidenceServiceId: string | null;
+  geofenceState?: OperationalGeofenceState | null;
 }) {
   const evidenceFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -556,10 +554,13 @@ function InServiceView(props: {
 
   const serviceWithEta = props.service as BackendServiceWithEta;
   const deliverySlaBreached = isSlaDeadlineBreached(serviceWithEta.sla_delivery_deadline_at);
-  const deliveryEtaLabel =
-    !deliverySlaBreached && serviceWithEta.eta_delivery_at != null
-      ? formatMinutesUntil(serviceWithEta.eta_delivery_at)
-      : null;
+  const copy = resolveOperationalCopy({
+    serviceStatus: serviceWithEta.status,
+    geofenceState: props.geofenceState,
+    etaDeliveryAt: serviceWithEta.eta_delivery_at,
+    etaMinutes: formatOperationalEtaMinutes(serviceWithEta.eta_delivery_at),
+    audience: "mensajero",
+  });
 
   return (
     <div className="min-h-screen bg-green-50 flex flex-col px-6 py-6">
@@ -606,10 +607,8 @@ function InServiceView(props: {
           >
             Entrega retrasada
           </p>
-        ) : deliveryEtaLabel ? (
-          <p className="text-sm font-medium text-green-900/90 text-center">
-            Entrega estimada en {deliveryEtaLabel}
-          </p>
+        ) : copy.etaLabel ? (
+          <p className="text-sm font-medium text-green-900/90 text-center">{copy.etaLabel}</p>
         ) : null}
 
         <div className="rounded-xl border border-green-200/80 bg-white p-4 shadow-sm">
@@ -867,6 +866,7 @@ export default function MensajeroPanel() {
         messengerPosition={messengerMapPosition}
         onStart={() => handleStartService(dispatchCurrentService)}
         isStarting={startingServiceId === dispatchCurrentService.service_id}
+        geofenceState={null}
       />
     );
   }
@@ -889,6 +889,7 @@ export default function MensajeroPanel() {
         evidenceFile={evidenceFile}
         evidencePreviewUrl={evidencePreviewUrl}
         uploadingEvidenceServiceId={uploadingEvidenceServiceId}
+        geofenceState={null}
       />
     );
   }

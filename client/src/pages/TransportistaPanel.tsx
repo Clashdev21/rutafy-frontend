@@ -16,6 +16,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OperationalParticipantCard } from "@/components/OperationalParticipantCard";
+import {
+  formatOperationalEtaMinutes,
+  resolveOperationalCopy,
+} from "@/lib/resolveOperationalCopy";
 import { formatServiceRouteEndpoint } from "@/lib/formatOperationalLocation";
 import {
   normalizeOperationalParticipant,
@@ -102,6 +106,53 @@ type LocalServiceItem = {
 };
 
 type BackendCreateServiceResponse = Record<string, unknown>;
+
+type OriginLocationCaptureStatus =
+  | "idle"
+  | "detecting"
+  | "captured"
+  | "node_fallback";
+
+const TRANSPORTISTA_ORIGIN_GPS_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  maximumAge: 0,
+  timeout: 10000,
+};
+
+function captureTransportistaOriginGps(): Promise<{ lat: number; lng: number } | null> {
+  return new Promise((resolve) => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+      },
+      () => resolve(null),
+      TRANSPORTISTA_ORIGIN_GPS_OPTIONS,
+    );
+  });
+}
+
+function formatOriginLocationCaptureStatus(
+  status: OriginLocationCaptureStatus,
+): string | null {
+  switch (status) {
+    case "detecting":
+      return "Detectando ubicación...";
+    case "captured":
+      return "Ubicación capturada";
+    case "node_fallback":
+      return "Usando ubicación del nodo";
+    default:
+      return null;
+  }
+}
 
 type NodeItemMetadata = {
   search_aliases?: string[];
@@ -428,16 +479,6 @@ function normalizeBackendServiceToLocal(
     sla_delivery_deadline_at: service.sla_delivery_deadline_at ?? null,
     assigned_messenger: normalizeOperationalParticipant(service.assigned_messenger),
   };
-}
-
-function formatMinutesUntil(iso?: string | null): string | null {
-  if (iso == null || String(iso).trim() === "") return null;
-  const targetMs = Date.parse(String(iso));
-  if (!Number.isFinite(targetMs)) return null;
-  const minutes = (targetMs - Date.now()) / 60_000;
-  if (minutes <= 0) return null;
-  if (minutes < 1) return "menos de 1 min";
-  return `${Math.ceil(minutes)} min`;
 }
 
 function isSlaDeadlineBreached(deadlineIso?: string | null): boolean {
@@ -801,6 +842,13 @@ function postTransportistaDebugLog(
   message: string,
   data: Record<string, unknown>,
 ) {
+  if (
+    !import.meta.env.DEV ||
+    import.meta.env.VITE_ENABLE_TRANSPORTISTA_DEBUG !== "true"
+  ) {
+    return;
+  }
+
   // #region agent log
   fetch("http://127.0.0.1:7395/ingest/ab1c0a5e-cbfc-4d3e-a959-ae19e797e481", {
     method: "POST",
@@ -973,31 +1021,34 @@ function AssignedServiceView({
   onCancel,
   canCancel,
   isCancelling,
+  geofenceState,
 }: {
   activeService: LocalServiceItem;
   closePin: string | null;
   onCancel: () => void | Promise<void>;
   canCancel: boolean;
   isCancelling: boolean;
+  geofenceState?: "AT_PICKUP" | "AT_DROPOFF" | null;
 }) {
   const pickupSlaBreached = isSlaDeadlineBreached(activeService.sla_pickup_deadline_at);
-  const pickupEtaLabel =
-    !pickupSlaBreached && activeService.eta_pickup_at != null
-      ? formatMinutesUntil(activeService.eta_pickup_at)
-      : null;
+  const pickupEtaMinutes = formatOperationalEtaMinutes(activeService.eta_pickup_at);
+  const copy = resolveOperationalCopy({
+    serviceStatus: activeService.status,
+    geofenceState,
+    etaPickupAt: activeService.eta_pickup_at,
+    etaMinutes: pickupEtaMinutes,
+    audience: "transportista",
+  });
 
   return (
     <div className="space-y-5">
       <div className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/85">
-          Mensajero asignado
+          {copy.title}
         </p>
-        <h2 className="text-lg font-bold leading-snug text-white sm:text-xl">
-          Tu solicitud fue aceptada
-        </h2>
-        <p className="text-sm leading-relaxed text-white/90">
-          El mensajero se dirige al punto de recogida.
-        </p>
+        {copy.subtitle ? (
+          <h2 className="text-lg font-bold leading-snug text-white sm:text-xl">{copy.subtitle}</h2>
+        ) : null}
         {pickupSlaBreached ? (
           <p
             role="alert"
@@ -1005,10 +1056,8 @@ function AssignedServiceView({
           >
             Recogida retrasada
           </p>
-        ) : pickupEtaLabel ? (
-          <p className="text-sm font-medium text-white/95">
-            Mensajero llega aprox. en {pickupEtaLabel}
-          </p>
+        ) : copy.etaLabel ? (
+          <p className="text-sm font-medium text-white/95">{copy.etaLabel}</p>
         ) : null}
       </div>
 
@@ -1081,25 +1130,31 @@ function AssignedServiceView({
 function InProgressServiceView({
   activeService,
   closePin,
+  geofenceState,
 }: {
   activeService: LocalServiceItem;
   closePin: string | null;
+  geofenceState?: "AT_PICKUP" | "AT_DROPOFF" | null;
 }) {
   const deliverySlaBreached = isSlaDeadlineBreached(activeService.sla_delivery_deadline_at);
-  const deliveryEtaLabel =
-    !deliverySlaBreached && activeService.eta_delivery_at != null
-      ? formatMinutesUntil(activeService.eta_delivery_at)
-      : null;
+  const deliveryEtaMinutes = formatOperationalEtaMinutes(activeService.eta_delivery_at);
+  const copy = resolveOperationalCopy({
+    serviceStatus: activeService.status,
+    geofenceState,
+    etaDeliveryAt: activeService.eta_delivery_at,
+    etaMinutes: deliveryEtaMinutes,
+    audience: "transportista",
+  });
 
   return (
     <div className="space-y-5">
       <div className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/85">
-          Servicio en curso
+          {copy.title}
         </p>
-        <h2 className="text-lg font-bold leading-snug text-white sm:text-xl">
-          El mensajero está realizando la entrega
-        </h2>
+        {copy.subtitle ? (
+          <h2 className="text-lg font-bold leading-snug text-white sm:text-xl">{copy.subtitle}</h2>
+        ) : null}
         {deliverySlaBreached ? (
           <p
             role="alert"
@@ -1107,10 +1162,8 @@ function InProgressServiceView({
           >
             Entrega retrasada
           </p>
-        ) : deliveryEtaLabel ? (
-          <p className="text-sm font-medium text-white/95">
-            Entrega estimada en {deliveryEtaLabel}
-          </p>
+        ) : copy.etaLabel ? (
+          <p className="text-sm font-medium text-white/95">{copy.etaLabel}</p>
         ) : null}
       </div>
 
@@ -1301,6 +1354,7 @@ type TransportistaHomeViewProps = {
   onCreateServiceScheduled: () => void | Promise<void>;
   isCreatingNow: boolean;
   isCreatingScheduled: boolean;
+  originLocationCaptureStatus: OriginLocationCaptureStatus;
   manualAddressModal: "origin" | "destination" | null;
   manualAddressDraft: string;
   setManualAddressDraft: (value: string) => void;
@@ -1354,6 +1408,7 @@ function TransportistaHomeView(props: TransportistaHomeViewProps) {
     onCreateServiceScheduled,
     isCreatingNow,
     isCreatingScheduled,
+    originLocationCaptureStatus,
     manualAddressModal,
     manualAddressDraft,
     setManualAddressDraft,
@@ -1377,6 +1432,10 @@ function TransportistaHomeView(props: TransportistaHomeViewProps) {
       // #endregion
     };
   }, []);
+
+  const originLocationCaptureLabel = formatOriginLocationCaptureStatus(
+    originLocationCaptureStatus,
+  );
 
   const activeClosePin = activeService ? getUsableClosePin(activeService) : null;
   const isOperationalIdle = isIdle || !activeService;
@@ -1407,9 +1466,14 @@ function TransportistaHomeView(props: TransportistaHomeViewProps) {
               onCancel={() => void onCancelService(activeService)}
               canCancel={isTransportistaCancelableServiceStatus(activeService.status)}
               isCancelling={cancellingServiceId === activeService.id}
+              geofenceState={null}
             />
           ) : isInProgress && activeService ? (
-            <InProgressServiceView activeService={activeService} closePin={activeClosePin} />
+            <InProgressServiceView
+              activeService={activeService}
+              closePin={activeClosePin}
+              geofenceState={null}
+            />
           ) : isCompleted && activeService ? (
             <CompletedServiceView activeService={activeService} onNewService={handleReturnToIdle} />
           ) : isCancelled && activeService ? (
@@ -1526,6 +1590,11 @@ function TransportistaHomeView(props: TransportistaHomeViewProps) {
               })}
 
               <div className="flex justify-end gap-3">
+                {isCreatingNow && originLocationCaptureLabel ? (
+                  <p className="mr-auto self-center text-xs text-slate-600">
+                    {originLocationCaptureLabel}
+                  </p>
+                ) : null}
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -1595,6 +1664,11 @@ function TransportistaHomeView(props: TransportistaHomeViewProps) {
               })}
 
               <div className="flex justify-end gap-3">
+                {isCreatingScheduled && originLocationCaptureLabel ? (
+                  <p className="mr-auto self-center text-xs text-slate-600">
+                    {originLocationCaptureLabel}
+                  </p>
+                ) : null}
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -1821,6 +1895,8 @@ export default function TransportistaPanel() {
   const [copiedClosePin, setCopiedClosePin] = useState(false);
   const [isCreatingNow, setIsCreatingNow] = useState(false);
   const [isCreatingScheduled, setIsCreatingScheduled] = useState(false);
+  const [originLocationCaptureStatus, setOriginLocationCaptureStatus] =
+    useState<OriginLocationCaptureStatus>("idle");
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [dismissedTerminalServiceId, setDismissedTerminalServiceId] = useState<string | null>(null);
 
@@ -2187,6 +2263,7 @@ export default function TransportistaPanel() {
     setScheduledAt("");
     setManualAddressModal(null);
     setManualAddressDraft("");
+    setOriginLocationCaptureStatus("idle");
   };
 
   const copyToClipboard = async (
@@ -2206,7 +2283,10 @@ export default function TransportistaPanel() {
     toast.success("Copiado al portapapeles");
   };
 
-  const buildPayload = (requestMode: RequestFlow) => {
+  const buildPayload = (
+    requestMode: RequestFlow,
+    deviceOriginCoords?: { lat: number; lng: number } | null,
+  ) => {
     const nodeReferenceTrimmed = nodeReference.trim();
     const finalOrigin =
       originMode === "NODE"
@@ -2253,6 +2333,16 @@ export default function TransportistaPanel() {
       throw new Error("Debes seleccionar la fecha y hora programada.");
     }
 
+    const nodeOriginLat =
+      originMode === "NODE" ? originSelectedNode?.lat : undefined;
+    const nodeOriginLng =
+      originMode === "NODE" ? originSelectedNode?.lng : undefined;
+
+    const origin_lat =
+      deviceOriginCoords != null ? deviceOriginCoords.lat : nodeOriginLat;
+    const origin_lng =
+      deviceOriginCoords != null ? deviceOriginCoords.lng : nodeOriginLng;
+
     return {
       requester_company_id: effectiveCompanyId,
       service_type: mapUiTypeToBackendType(serviceType),
@@ -2263,8 +2353,10 @@ export default function TransportistaPanel() {
       origin_node_id: originMode === "NODE" ? originNodeId : undefined,
       destination_node_id:
         destinationMode === "NODE" ? destinationNodeId : undefined,
-      origin_lat: originMode === "NODE" ? originSelectedNode?.lat : undefined,
-      origin_lng: originMode === "NODE" ? originSelectedNode?.lng : undefined,
+      origin_lat,
+      origin_lng,
+      origin_sub_location:
+        nodeReferenceTrimmed !== "" ? nodeReferenceTrimmed : undefined,
       destination_lat:
         destinationMode === "NODE"
           ? destinationSelectedNode?.lat
@@ -2287,10 +2379,13 @@ export default function TransportistaPanel() {
   };
 
   const handleCreateService = async (requestMode: RequestFlow) => {
+    let finalOrigin = "";
+    let finalDestination = "";
+
     try {
-      const payload = buildPayload(requestMode);
-      const finalOrigin = String(payload.origin);
-      const finalDestination = String(payload.destination);
+      const validated = buildPayload(requestMode, null);
+      finalOrigin = String(validated.origin);
+      finalDestination = String(validated.destination);
 
       if (requestMode === "NOW") {
         setIsCreatingNow(true);
@@ -2298,6 +2393,13 @@ export default function TransportistaPanel() {
         setIsCreatingScheduled(true);
       }
 
+      setOriginLocationCaptureStatus("detecting");
+      const deviceOriginCoords = await captureTransportistaOriginGps();
+      setOriginLocationCaptureStatus(
+        deviceOriginCoords != null ? "captured" : "node_fallback",
+      );
+
+      const payload = buildPayload(requestMode, deviceOriginCoords);
       const response = (await createService(payload)) as BackendCreateServiceResponse;
 
       const normalized = normalizeCreateResponse(response);
@@ -2350,6 +2452,7 @@ export default function TransportistaPanel() {
     } finally {
       setIsCreatingNow(false);
       setIsCreatingScheduled(false);
+      setOriginLocationCaptureStatus("idle");
     }
   };
 
@@ -2471,6 +2574,7 @@ export default function TransportistaPanel() {
             onCreateServiceScheduled={() => handleCreateService("SCHEDULED")}
             isCreatingNow={isCreatingNow}
             isCreatingScheduled={isCreatingScheduled}
+            originLocationCaptureStatus={originLocationCaptureStatus}
             manualAddressModal={manualAddressModal}
             manualAddressDraft={manualAddressDraft}
             setManualAddressDraft={setManualAddressDraft}
