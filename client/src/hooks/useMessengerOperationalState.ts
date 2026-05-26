@@ -20,6 +20,7 @@ import {
   type OperationalParticipant,
 } from "@/lib/operationalParticipant";
 import { buildMessengerRealtimeWebSocketUrl } from "@/lib/messengerRealtimeWs";
+import type { OperationalGeofenceState } from "@/lib/resolveOperationalCopy";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -228,6 +229,30 @@ export function buildAbsoluteUrl(fileUrl?: string | null): string | null {
   if (!fileUrl) return null;
   if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
   return `${getPublicApiOrigin()}${fileUrl}`;
+}
+
+function normalizeGeofenceServiceStatus(status: unknown): string {
+  return String(status ?? "")
+    .trim()
+    .toUpperCase();
+}
+
+function resolvePersistedGeofenceState(
+  state: unknown,
+  serviceStatus: unknown,
+): OperationalGeofenceState | null {
+  const normalizedState = String(state ?? "")
+    .trim()
+    .toUpperCase();
+  const normalizedStatus = normalizeGeofenceServiceStatus(serviceStatus);
+
+  if (normalizedState === "AT_PICKUP" && normalizedStatus === "CLAIMED") {
+    return "AT_PICKUP";
+  }
+  if (normalizedState === "AT_DROPOFF" && normalizedStatus === "STARTED") {
+    return "AT_DROPOFF";
+  }
+  return null;
 }
 
 function isObject(value: unknown): value is Record<string, any> {
@@ -464,6 +489,9 @@ export function useMessengerOperationalState() {
   const [locationRequested, setLocationRequested] = useState(false);
   const [showFullQueues, setShowFullQueues] = useState(false);
   const [realtimeReconnectVersion, setRealtimeReconnectVersion] = useState(0);
+  const [geofenceByServiceId, setGeofenceByServiceId] = useState<
+    Record<string, OperationalGeofenceState>
+  >({});
 
   const sessionActorIdRaw =
     user?.actor_id != null ? String(user.actor_id).trim() : "";
@@ -982,6 +1010,7 @@ export function useMessengerOperationalState() {
         clearTimeout(wsOfferDebounceRef.current);
         wsOfferDebounceRef.current = null;
       }
+      setGeofenceByServiceId({});
     };
 
     window.addEventListener("auth:token-refreshed", onTokenRefreshed);
@@ -1007,6 +1036,7 @@ export function useMessengerOperationalState() {
         clearTimeout(wsOfferDebounceRef.current);
         wsOfferDebounceRef.current = null;
       }
+      setGeofenceByServiceId({});
     };
 
     if (!isOnline || !actorId || !isValidUuid(actorId)) {
@@ -1065,8 +1095,51 @@ export function useMessengerOperationalState() {
       return null;
     };
 
+    const clearGeofenceForService = (serviceId: string) => {
+      const sid = String(serviceId ?? "").trim();
+      if (!sid) return;
+      setGeofenceByServiceId((prev) => {
+        if (!(sid in prev)) return prev;
+        const next = { ...prev };
+        delete next[sid];
+        return next;
+      });
+    };
+
+    const applyGeofenceUpdated = (payload: Record<string, unknown>) => {
+      const messengerId = String(
+        payload.messenger_id ?? payload.messengerId ?? "",
+      ).trim();
+      if (
+        messengerId !== "" &&
+        messengerId !== String(actorId).trim()
+      ) {
+        return;
+      }
+
+      const serviceId = String(payload.service_id ?? payload.serviceId ?? "").trim();
+      if (!serviceId) return;
+
+      const persisted = resolvePersistedGeofenceState(
+        payload.state,
+        payload.service_status ?? payload.serviceStatus,
+      );
+
+      setGeofenceByServiceId((prev) => {
+        if (persisted == null) {
+          if (!(serviceId in prev)) return prev;
+          const next = { ...prev };
+          delete next[serviceId];
+          return next;
+        }
+        if (prev[serviceId] === persisted) return prev;
+        return { ...prev, [serviceId]: persisted };
+      });
+    };
+
     const applyServiceCancelled = (serviceId: string) => {
       if (!serviceId) return;
+      clearGeofenceForService(serviceId);
       setAvailableServices((prev) => prev.filter((s) => s.service_id !== serviceId));
       setOfferIdByServiceId((prev) => {
         if (!(serviceId in prev)) return prev;
@@ -1097,7 +1170,25 @@ export function useMessengerOperationalState() {
             break;
           }
 
-          const eventType = o.type ?? o.event;
+          const eventType = String(o.type ?? o.event ?? "").trim();
+
+          if (eventType === "geofence.updated") {
+            const payload = isObject(o.data)
+              ? (o.data as Record<string, unknown>)
+              : o;
+            applyGeofenceUpdated(payload);
+            break;
+          }
+
+          if (
+            !eventType &&
+            (o.service_id != null || o.serviceId != null) &&
+            o.state != null
+          ) {
+            applyGeofenceUpdated(o);
+            break;
+          }
+
           if (eventType !== "offer.created") continue;
 
           const target =
@@ -1299,6 +1390,12 @@ export function useMessengerOperationalState() {
         reason,
       });
 
+      setGeofenceByServiceId((prev) => {
+        if (!(service.service_id in prev)) return prev;
+        const next = { ...prev };
+        delete next[service.service_id];
+        return next;
+      });
       await refreshMyServices();
       await refreshAvailableServices();
     } catch (e: any) {
@@ -1468,10 +1565,11 @@ export function useMessengerOperationalState() {
     }
 
     setValidationError("");
-    setClosingServiceId(selectedService.service_id);
+    const closingServiceIdValue = selectedService.service_id;
+    setClosingServiceId(closingServiceIdValue);
 
     try {
-      await jsonPost(`/v1/services/${selectedService.service_id}/close`, {
+      await jsonPost(`/v1/services/${closingServiceIdValue}/close`, {
         actor_role: "mensajero",
         actor_id: actorId,
         messenger_id: actorId,
@@ -1482,6 +1580,12 @@ export function useMessengerOperationalState() {
       setClosePin("");
       setSelectedService(null);
       clearEvidenceDraft();
+      setGeofenceByServiceId((prev) => {
+        if (!(closingServiceIdValue in prev)) return prev;
+        const next = { ...prev };
+        delete next[closingServiceIdValue];
+        return next;
+      });
       await Promise.all([refreshMyServices(), refreshAvailableServices()]);
     } catch (error: any) {
       if (error.message === "invalid_close_pin") {
@@ -1520,6 +1624,9 @@ export function useMessengerOperationalState() {
     : [];
 
   const dispatchCurrentService = activeService ?? claimedServices[0] ?? null;
+  const activeGeofenceState = dispatchCurrentService?.service_id
+    ? geofenceByServiceId[dispatchCurrentService.service_id] ?? null
+    : null;
   const firstOffer = availableServices[0] ?? null;
 
   let uiState: UiState;
@@ -1604,6 +1711,7 @@ export function useMessengerOperationalState() {
     activeService,
     selectedServiceEvidences,
     dispatchCurrentService,
+    activeGeofenceState,
     firstOffer,
     uiState,
     showPrimaryOfferHero,

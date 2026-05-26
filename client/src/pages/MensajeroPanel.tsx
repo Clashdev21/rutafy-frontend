@@ -804,6 +804,7 @@ export default function MensajeroPanel() {
     activeService,
     selectedServiceEvidences,
     dispatchCurrentService,
+    activeGeofenceState,
     firstOffer,
     uiState,
     showPrimaryOfferHero,
@@ -866,7 +867,7 @@ export default function MensajeroPanel() {
         messengerPosition={messengerMapPosition}
         onStart={() => handleStartService(dispatchCurrentService)}
         isStarting={startingServiceId === dispatchCurrentService.service_id}
-        geofenceState={null}
+        geofenceState={activeGeofenceState}
       />
     );
   }
@@ -889,7 +890,7 @@ export default function MensajeroPanel() {
         evidenceFile={evidenceFile}
         evidencePreviewUrl={evidencePreviewUrl}
         uploadingEvidenceServiceId={uploadingEvidenceServiceId}
-        geofenceState={null}
+        geofenceState={activeGeofenceState}
       />
     );
   }
