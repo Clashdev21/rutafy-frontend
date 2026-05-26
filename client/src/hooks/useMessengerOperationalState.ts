@@ -464,6 +464,10 @@ export function useMessengerOperationalState() {
   const [claimingServiceId, setClaimingServiceId] = useState<string | null>(null);
   const [startingServiceId, setStartingServiceId] = useState<string | null>(null);
   const [closingServiceId, setClosingServiceId] = useState<string | null>(null);
+  const [cancellingServiceId, setCancellingServiceId] = useState<string | null>(null);
+  const [reportingIncidentServiceId, setReportingIncidentServiceId] = useState<string | null>(
+    null
+  );
 
   const [manualActorId, setManualActorId] = useState("");
   const [manualMessengerName, setManualMessengerName] = useState("");
@@ -1379,9 +1383,15 @@ export function useMessengerOperationalState() {
 
   const handleCancelService = async (service: BackendService) => {
     if (!actorId) return;
+    if (cancellingServiceId === service.service_id) return;
+
+    setCancellingServiceId(service.service_id);
 
     const reason = window.prompt("Motivo de cancelación:");
-    if (!reason) return;
+    if (!reason) {
+      setCancellingServiceId(null);
+      return;
+    }
 
     try {
       await jsonPost(`/v1/services/${service.service_id}/cancel-by-messenger`, {
@@ -1399,15 +1409,22 @@ export function useMessengerOperationalState() {
       await refreshMyServices();
       await refreshAvailableServices();
     } catch (e: any) {
+      setCancellingServiceId(null);
       alert(restErrorMessage(e, "No se pudo cancelar el servicio"));
     }
   };
 
   const handleReportIncident = async (service: BackendService) => {
     if (!actorId) return;
+    if (reportingIncidentServiceId === service.service_id) return;
+
+    setReportingIncidentServiceId(service.service_id);
 
     const reason = window.prompt("Describe el inconveniente:");
-    if (!reason) return;
+    if (!reason) {
+      setReportingIncidentServiceId(null);
+      return;
+    }
 
     try {
       await jsonPost(`/v1/services/${service.service_id}/report-incident`, {
@@ -1418,6 +1435,7 @@ export function useMessengerOperationalState() {
 
       await refreshMyServices();
     } catch (e: any) {
+      setReportingIncidentServiceId(null);
       alert(restErrorMessage(e, "No se pudo reportar el inconveniente"));
     }
   };
@@ -1669,6 +1687,8 @@ export function useMessengerOperationalState() {
     claimingServiceId,
     startingServiceId,
     closingServiceId,
+    cancellingServiceId,
+    reportingIncidentServiceId,
 
     manualActorId,
     setManualActorId,

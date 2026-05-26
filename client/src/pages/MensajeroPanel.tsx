@@ -531,6 +531,7 @@ function InServiceView(props: {
   onCloseService: () => void | Promise<void>;
   closingServiceId: string | null;
   onReportIncident: (service: BackendService) => void;
+  reportingIncidentServiceId: string | null;
   validationError: string;
   onOpenCloseValidationSafe: (service: BackendService) => void | Promise<void>;
   evidences: ServiceEvidence[];
@@ -548,6 +549,8 @@ function InServiceView(props: {
   }, [props.service.service_id]);
 
   const isClosing = props.closingServiceId === props.service.service_id;
+  const isReportingIncident =
+    props.reportingIncidentServiceId === props.service.service_id;
   const isPinValid = props.closePin.trim().length === 4;
   const isUploading = props.uploadingEvidenceServiceId === props.service.service_id;
 
@@ -725,10 +728,18 @@ function InServiceView(props: {
           <Button
             type="button"
             variant="outline"
+            disabled={isReportingIncident || isClosing}
             onClick={() => void props.onReportIncident(props.service)}
-            className="w-full text-gray-600"
+            className="w-full text-gray-600 disabled:opacity-70"
           >
-            Reportar incidente
+            {isReportingIncident ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
+                Reportando...
+              </>
+            ) : (
+              "Reportar incidente"
+            )}
           </Button>
         </div>
       </div>
@@ -767,6 +778,8 @@ export default function MensajeroPanel() {
     claimingServiceId,
     startingServiceId,
     closingServiceId,
+    cancellingServiceId,
+    reportingIncidentServiceId,
     manualActorId,
     setManualActorId,
     manualMessengerName,
@@ -880,6 +893,7 @@ export default function MensajeroPanel() {
         onCloseService={handleCloseService}
         closingServiceId={closingServiceId}
         onReportIncident={handleReportIncident}
+        reportingIncidentServiceId={reportingIncidentServiceId}
         validationError={validationError}
         onOpenCloseValidationSafe={loadEvidencesForService}
         evidences={evidencesByService[dispatchCurrentService.service_id] ?? []}
@@ -1135,9 +1149,20 @@ export default function MensajeroPanel() {
                       <Button
                         variant="destructive"
                         size="sm"
+                        disabled={
+                          cancellingServiceId === dispatchCurrentService.service_id ||
+                          startingServiceId === dispatchCurrentService.service_id
+                        }
                         onClick={() => void handleCancelService(dispatchCurrentService)}
                       >
-                        Cancelar servicio
+                        {cancellingServiceId === dispatchCurrentService.service_id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-1 animate-spin" aria-hidden />
+                            Cancelando...
+                          </>
+                        ) : (
+                          "Cancelar servicio"
+                        )}
                       </Button>
                     </>
                   )}
@@ -1161,9 +1186,20 @@ export default function MensajeroPanel() {
                       <Button
                         variant="outline"
                         size="sm"
+                        disabled={
+                          reportingIncidentServiceId === dispatchCurrentService.service_id ||
+                          closingServiceId === dispatchCurrentService.service_id
+                        }
                         onClick={() => void handleReportIncident(dispatchCurrentService)}
                       >
-                        Reportar inconveniente
+                        {reportingIncidentServiceId === dispatchCurrentService.service_id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-1 animate-spin" aria-hidden />
+                            Reportando...
+                          </>
+                        ) : (
+                          "Reportar inconveniente"
+                        )}
                       </Button>
                     </>
                   )}
