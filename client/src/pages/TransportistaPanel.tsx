@@ -18,6 +18,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OperationalParticipantCard } from "@/components/OperationalParticipantCard";
+import {
+  ProtectedEvidenceImage,
+  ProtectedEvidenceViewLink,
+} from "@/components/ProtectedEvidenceImage";
 import { GpsFreshnessIndicator } from "@/components/GpsFreshnessIndicator";
 import { OperationalTimeline } from "@/components/OperationalTimeline";
 import { resolveOperationalCopy } from "@/lib/resolveOperationalCopy";
@@ -234,6 +238,8 @@ type BackendServiceRow = {
   sla_pickup_deadline_at?: string | null;
   sla_delivery_deadline_at?: string | null;
   assigned_messenger?: unknown;
+  messenger?: unknown;
+  mensajero?: unknown;
   messenger_location_updated_at?: string | null;
   location_updated_at?: string | null;
   claimed_at?: string | null;
@@ -259,24 +265,6 @@ type ServiceEvidenceItem = {
   note: string | null;
   created_at: string;
 };
-
-const RAW_EVIDENCE_API_BASE =
-  typeof import.meta !== "undefined" &&
-  import.meta.env &&
-  typeof import.meta.env.VITE_RUTAFY_API_BASE === "string"
-    ? import.meta.env.VITE_RUTAFY_API_BASE.trim()
-    : "";
-
-const EVIDENCE_ASSETS_BASE =
-  RAW_EVIDENCE_API_BASE && /^https?:\/\//i.test(RAW_EVIDENCE_API_BASE)
-    ? RAW_EVIDENCE_API_BASE.replace(/\/+$/, "")
-    : "https://api.rutafy.app";
-
-function buildEvidenceAbsoluteUrl(fileUrl?: string | null): string | null {
-  if (!fileUrl) return null;
-  if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
-  return `${EVIDENCE_ASSETS_BASE}${fileUrl}`;
-}
 
 const DEFAULT_REQUESTER_COMPANY_ID = "1e62b8f8-b4ec-4d9a-9d8b-0015bf97d01a";
 
@@ -449,6 +437,16 @@ function pickOptionalNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function resolveAssignedMessengerRaw(service: BackendServiceRow): unknown {
+  const candidates = [service.assigned_messenger, service.messenger, service.mensajero];
+  for (const raw of candidates) {
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      return raw;
+    }
+  }
+  return null;
+}
+
 function extractMessengerLocationSnapshot(
   service: BackendServiceRow,
 ): MessengerLocationSnapshot | undefined {
@@ -557,7 +555,9 @@ function normalizeBackendServiceToLocal(
     eta_delivery_at: service.eta_delivery_at ?? null,
     sla_pickup_deadline_at: service.sla_pickup_deadline_at ?? null,
     sla_delivery_deadline_at: service.sla_delivery_deadline_at ?? null,
-    assigned_messenger: normalizeOperationalParticipant(service.assigned_messenger),
+    assigned_messenger: normalizeOperationalParticipant(
+      resolveAssignedMessengerRaw(service),
+    ),
     messengerLocation: extractMessengerLocationSnapshot(service),
     originCoords: parseServiceRouteCoords(service, "origin"),
     destinationCoords: parseServiceRouteCoords(service, "destination"),
@@ -3031,11 +3031,13 @@ export default function TransportistaPanel() {
                 ) : (
                   <ul className="space-y-3 max-h-64 overflow-y-auto pr-0.5">
                     {detailEvidences.map((ev) => {
-                      const url = buildEvidenceAbsoluteUrl(ev.file_url);
+                      const evidenceId = String(ev.evidence_id ?? "").trim();
+                      const detailServiceId = selectedHistoryService.id;
                       const mime = ev.mime_type ?? "";
                       const looksImage =
                         mime.startsWith("image/") ||
                         /\.(jpe?g|png|gif|webp|heic|heif)(\?|$)/i.test(ev.file_url || "");
+                      const useProtected = Boolean(evidenceId && detailServiceId);
                       return (
                         <li
                           key={ev.evidence_id}
@@ -3052,28 +3054,20 @@ export default function TransportistaPanel() {
                               <span className="font-medium text-slate-700">Nota:</span> {ev.note}
                             </p>
                           ) : null}
-                          {url && looksImage ? (
-                            <a
-                              href={url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="block rounded-md border border-slate-100 overflow-hidden"
-                            >
-                              <img
-                                src={url}
-                                alt={`Evidencia ${ev.kind}`}
-                                className="max-h-32 w-full object-contain bg-slate-50"
-                              />
-                            </a>
-                          ) : url ? (
-                            <a
-                              href={url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex text-[#2A9D8F] font-medium hover:underline"
-                            >
-                              Ver archivo
-                            </a>
+                          {useProtected && looksImage ? (
+                            <ProtectedEvidenceImage
+                              serviceId={detailServiceId}
+                              evidenceId={evidenceId}
+                              alt={`Evidencia ${ev.kind}`}
+                              className="max-h-32 w-full object-contain bg-slate-50"
+                              linked
+                              linkClassName="block rounded-md border border-slate-100 overflow-hidden"
+                            />
+                          ) : useProtected ? (
+                            <ProtectedEvidenceViewLink
+                              serviceId={detailServiceId}
+                              evidenceId={evidenceId}
+                            />
                           ) : null}
                         </li>
                       );

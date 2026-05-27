@@ -22,12 +22,23 @@ export function normalizeOperationalParticipant(
   const name =
     pickStr(rec.name) ??
     pickStr(rec.full_name) ??
-    pickStr(rec.display_name);
+    pickStr(rec.display_name) ??
+    pickStr(rec.messenger_name) ??
+    pickStr(rec.mensajero_name) ??
+    pickStr(rec.nombre);
   const plate =
     pickStr(rec.plate) ??
     pickStr(rec.vehicle_plate) ??
-    pickStr(rec.vehiclePlate);
-  const vehicle_type = pickStr(rec.vehicle_type) ?? pickStr(rec.vehicleType);
+    pickStr(rec.vehiclePlate) ??
+    pickStr(rec.license_plate) ??
+    pickStr(rec.plate_number) ??
+    pickStr(rec.placa);
+  const vehicle_type =
+    pickStr(rec.vehicle_type) ??
+    pickStr(rec.vehicleType) ??
+    pickStr(rec.tipo_vehiculo) ??
+    pickStr(rec.tipoVehiculo) ??
+    pickStr(rec.vehicle);
   const vehicle_reference =
     pickStr(rec.vehicle_reference) ?? pickStr(rec.vehicleReference);
   const company_name = pickStr(rec.company_name) ?? pickStr(rec.companyName);
