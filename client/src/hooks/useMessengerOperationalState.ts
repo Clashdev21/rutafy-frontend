@@ -1650,8 +1650,13 @@ export function useMessengerOperationalState() {
     : null;
   const firstOffer = availableServices[0] ?? null;
 
+  const hasActiveClaimedOrStartedService =
+    dispatchCurrentService?.status === "CLAIMED" ||
+    dispatchCurrentService?.status === "STARTED";
+  const effectiveIsOnline = isOnline || hasActiveClaimedOrStartedService;
+
   let uiState: UiState;
-  if (!isOnline) {
+  if (!effectiveIsOnline) {
     uiState = "OFFLINE";
   } else if (dispatchCurrentService?.status === "STARTED") {
     uiState = "IN_SERVICE";
