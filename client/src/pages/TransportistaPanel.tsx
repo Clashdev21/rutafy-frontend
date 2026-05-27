@@ -18,9 +18,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OperationalParticipantCard } from "@/components/OperationalParticipantCard";
+import { GpsFreshnessIndicator } from "@/components/GpsFreshnessIndicator";
+import { OperationalTimeline } from "@/components/OperationalTimeline";
 import { resolveOperationalCopy } from "@/lib/resolveOperationalCopy";
-import { formatServiceRouteEndpoint } from "@/lib/formatOperationalLocation";
 import {
+  formatServiceRouteEndpoint,
+  parseServiceRouteCoords,
+} from "@/lib/formatOperationalLocation";
+import { resolveOperationalDistanceLabel } from "@/lib/resolveOperationalDistance";
+import { resolveOperationalTimeline } from "@/lib/resolveOperationalTimeline";
+import {
+  hasOperationalParticipant,
   normalizeOperationalParticipant,
   type OperationalParticipant,
 } from "@/lib/operationalParticipant";
@@ -79,6 +87,17 @@ type CreatedServiceInfo = {
   closePin: string;
 };
 
+type MessengerLocationSnapshot = {
+  lat: number | null;
+  lng: number | null;
+  updatedAt: string | null;
+};
+
+type RouteCoords = {
+  lat: number;
+  lng: number;
+};
+
 type LocalServiceItem = {
   id: string;
   status: string;
@@ -102,6 +121,12 @@ type LocalServiceItem = {
   sla_pickup_deadline_at?: string | null;
   sla_delivery_deadline_at?: string | null;
   assigned_messenger?: OperationalParticipant | null;
+  messengerLocation?: MessengerLocationSnapshot;
+  originCoords?: RouteCoords | null;
+  destinationCoords?: RouteCoords | null;
+  claimedAt?: string | null;
+  startedAt?: string | null;
+  closedAt?: string | null;
 };
 
 type BackendCreateServiceResponse = Record<string, unknown>;
@@ -209,6 +234,14 @@ type BackendServiceRow = {
   sla_pickup_deadline_at?: string | null;
   sla_delivery_deadline_at?: string | null;
   assigned_messenger?: unknown;
+  messenger_location_updated_at?: string | null;
+  location_updated_at?: string | null;
+  claimed_at?: string | null;
+  claimedAt?: string | null;
+  started_at?: string | null;
+  startedAt?: string | null;
+  closed_at?: string | null;
+  closedAt?: string | null;
 };
 
 type BackendServicesListResponse = {
@@ -404,6 +437,54 @@ function normalizeCreateResponse(
   };
 }
 
+function pickOptionalString(value: unknown): string | null {
+  if (value == null) return null;
+  const s = String(value).trim();
+  return s.length > 0 ? s : null;
+}
+
+function pickOptionalNumber(value: unknown): number | null {
+  if (value == null) return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function extractMessengerLocationSnapshot(
+  service: BackendServiceRow,
+): MessengerLocationSnapshot | undefined {
+  const assigned = service.assigned_messenger;
+  const assignedRec =
+    assigned && typeof assigned === "object" && !Array.isArray(assigned)
+      ? (assigned as Record<string, unknown>)
+      : null;
+
+  const updatedAt =
+    pickOptionalString(assignedRec?.location_updated_at) ??
+    pickOptionalString(assignedRec?.locationUpdatedAt) ??
+    pickOptionalString(service.messenger_location_updated_at) ??
+    pickOptionalString(service.location_updated_at);
+
+  if (!updatedAt) return undefined;
+
+  const lat =
+    pickOptionalNumber(assignedRec?.current_lat) ??
+    pickOptionalNumber(assignedRec?.currentLat) ??
+    pickOptionalNumber(assignedRec?.lat) ??
+    pickOptionalNumber(assignedRec?.map_lat);
+
+  const lng =
+    pickOptionalNumber(assignedRec?.current_lng) ??
+    pickOptionalNumber(assignedRec?.currentLng) ??
+    pickOptionalNumber(assignedRec?.lng) ??
+    pickOptionalNumber(assignedRec?.map_lng);
+
+  return {
+    lat,
+    lng,
+    updatedAt,
+  };
+}
+
 function normalizeBackendServiceToLocal(
   service: BackendServiceRow,
 ): LocalServiceItem {
@@ -477,7 +558,62 @@ function normalizeBackendServiceToLocal(
     sla_pickup_deadline_at: service.sla_pickup_deadline_at ?? null,
     sla_delivery_deadline_at: service.sla_delivery_deadline_at ?? null,
     assigned_messenger: normalizeOperationalParticipant(service.assigned_messenger),
+    messengerLocation: extractMessengerLocationSnapshot(service),
+    originCoords: parseServiceRouteCoords(service, "origin"),
+    destinationCoords: parseServiceRouteCoords(service, "destination"),
+    claimedAt:
+      pickOptionalString(service.claimed_at) ?? pickOptionalString(service.claimedAt),
+    startedAt:
+      pickOptionalString(service.started_at) ?? pickOptionalString(service.startedAt),
+    closedAt:
+      pickOptionalString(service.closed_at) ?? pickOptionalString(service.closedAt),
   };
+}
+
+function TransportistaOperationalTimeline({
+  activeService,
+  geofenceState,
+}: {
+  activeService: LocalServiceItem;
+  geofenceState?: "AT_PICKUP" | "AT_DROPOFF" | null;
+}) {
+  const steps = resolveOperationalTimeline({
+    status: activeService.status,
+    createdAt: activeService.createdAt,
+    geofenceState,
+    hasAssignedMessenger: hasOperationalParticipant(activeService.assigned_messenger),
+    claimedAt: activeService.claimedAt,
+    startedAt: activeService.startedAt,
+    closedAt: activeService.closedAt,
+  });
+
+  return <OperationalTimeline steps={steps} />;
+}
+
+function OperationalDistanceAwareness({
+  activeService,
+  geofenceState,
+}: {
+  activeService: LocalServiceItem;
+  geofenceState?: "AT_PICKUP" | "AT_DROPOFF" | null;
+}) {
+  const label = resolveOperationalDistanceLabel({
+    serviceStatus: activeService.status,
+    messengerLat: activeService.messengerLocation?.lat,
+    messengerLng: activeService.messengerLocation?.lng,
+    originLat: activeService.originCoords?.lat,
+    originLng: activeService.originCoords?.lng,
+    destinationLat: activeService.destinationCoords?.lat,
+    destinationLng: activeService.destinationCoords?.lng,
+    locationUpdatedAt: activeService.messengerLocation?.updatedAt,
+    geofenceState,
+  });
+
+  if (!label) return null;
+
+  return (
+    <p className="text-xs font-medium leading-snug text-white/85">{label}</p>
+  );
 }
 
 function isSlaDeadlineBreached(deadlineIso?: string | null): boolean {
@@ -992,6 +1128,8 @@ function SearchingServiceView({
         </div>
       </div>
 
+      <TransportistaOperationalTimeline activeService={activeService} />
+
       {canCancel ? (
         <Button
           type="button"
@@ -1086,6 +1224,18 @@ function AssignedServiceView({
         participant={activeService.assigned_messenger}
         variant="onColor"
       />
+
+      <div className="flex flex-col gap-1.5">
+        <GpsFreshnessIndicator updatedAt={activeService.messengerLocation?.updatedAt} />
+        <OperationalDistanceAwareness
+          activeService={activeService}
+          geofenceState={geofenceState}
+        />
+        <TransportistaOperationalTimeline
+          activeService={activeService}
+          geofenceState={geofenceState}
+        />
+      </div>
 
       {closePin ? (
         <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 space-y-2">
@@ -1183,6 +1333,18 @@ function InProgressServiceView({
         variant="onColor"
       />
 
+      <div className="flex flex-col gap-1.5">
+        <GpsFreshnessIndicator updatedAt={activeService.messengerLocation?.updatedAt} />
+        <OperationalDistanceAwareness
+          activeService={activeService}
+          geofenceState={geofenceState}
+        />
+        <TransportistaOperationalTimeline
+          activeService={activeService}
+          geofenceState={geofenceState}
+        />
+      </div>
+
       {closePin ? (
         <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 space-y-2">
           <p className="text-sm font-semibold text-white">PIN de cierre</p>
@@ -1234,6 +1396,8 @@ function CompletedServiceView({
         </div>
       </div>
 
+      <TransportistaOperationalTimeline activeService={activeService} />
+
       <Button
         type="button"
         variant="secondary"
@@ -1278,6 +1442,8 @@ function CancelledServiceView({
           <p className="mt-0.5 font-medium text-white">{activeService.destination}</p>
         </div>
       </div>
+
+      <TransportistaOperationalTimeline activeService={activeService} />
 
       <Button
         type="button"
