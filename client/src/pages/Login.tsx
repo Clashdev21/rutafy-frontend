@@ -62,11 +62,11 @@ export default function Login() {
       toast.success("Inicio de sesión exitoso");
 
       if (normalized.appRole === "ADMIN") {
-        setLocation("/admin");
+        setLocation("/admin", { replace: true });
       } else if (normalized.appRole === "MENSAJERO") {
-        setLocation("/mensajero");
+        setLocation("/mensajero", { replace: true });
       } else {
-        setLocation("/transportista");
+        setLocation("/transportista", { replace: true });
       }
     } catch (err: unknown) {
       const msg = axios.isAxiosError(err)

@@ -114,11 +114,11 @@ export default function RegisterTransportista() {
       toast.success("Cuenta creada correctamente");
 
       if (normalized.appRole === "ADMIN") {
-        setLocation("/admin");
+        setLocation("/admin", { replace: true });
       } else if (normalized.appRole === "MENSAJERO") {
-        setLocation("/mensajero");
+        setLocation("/mensajero", { replace: true });
       } else {
-        setLocation("/transportista");
+        setLocation("/transportista", { replace: true });
       }
     } catch (err: unknown) {
       if (axios.isAxiosError(err) && err.response?.status === 409) {

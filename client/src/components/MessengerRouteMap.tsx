@@ -18,7 +18,7 @@ type LatLng = { lat: number; lng: number };
 type RouteMarkerKind = "messenger" | "pickup" | "delivery";
 
 type MarkerEntry = {
-  marker: google.maps.marker.AdvancedMarkerElement | google.maps.Marker;
+  marker: google.maps.Marker;
 };
 
 type OverlayState = {
@@ -38,51 +38,16 @@ function isGoogleMapsApiAvailable(): boolean {
   const g = window.google;
   if (!g?.maps) return false;
   if (typeof g.maps.Map !== "function") return false;
+  if (typeof g.maps.Marker !== "function") return false;
   if (typeof g.maps.LatLngBounds !== "function") return false;
+  if (!g.maps.SymbolPath || g.maps.SymbolPath.CIRCLE == null) return false;
   return true;
-}
-
-function canUseAdvancedMarkers(): boolean {
-  if (!isGoogleMapsApiAvailable()) return false;
-  return Boolean(
-    window.google?.maps?.marker?.AdvancedMarkerElement &&
-      typeof window.google.maps.marker.AdvancedMarkerElement === "function",
-  );
-}
-
-function canUseClassicMarkers(): boolean {
-  if (!isGoogleMapsApiAvailable()) return false;
-  return typeof window.google?.maps?.Marker === "function";
-}
-
-function createPinElement(label: string, color: string): HTMLDivElement {
-  const div = document.createElement("div");
-  div.textContent = label;
-  div.style.width = "30px";
-  div.style.height = "30px";
-  div.style.borderRadius = "9999px";
-  div.style.backgroundColor = color;
-  div.style.color = "white";
-  div.style.fontWeight = "800";
-  div.style.display = "flex";
-  div.style.alignItems = "center";
-  div.style.justifyContent = "center";
-  div.style.border = "2px solid white";
-  div.style.boxShadow = "0 2px 8px rgba(0,0,0,0.35)";
-  div.style.fontSize = "12px";
-  div.style.lineHeight = "1";
-  return div;
 }
 
 function detachMarker(entry: MarkerEntry | null): void {
   if (!entry) return;
   try {
-    const marker = entry.marker;
-    if ("setMap" in marker && typeof marker.setMap === "function") {
-      (marker as google.maps.Marker).setMap(null);
-      return;
-    }
-    (marker as google.maps.marker.AdvancedMarkerElement).map = null;
+    entry.marker.setMap(null);
   } catch {
     /* evitar fallo en cleanup */
   }
@@ -96,12 +61,14 @@ function createRouteMarker(
   try {
     if (!isGoogleMapsApiAvailable()) return null;
 
+    const maps = window.google!.maps!;
+
     const config: Record<
       RouteMarkerKind,
       { label: string; title: string; color: string; zIndex: number }
     > = {
       messenger: {
-        label: "Tú",
+        label: "T",
         title: "Tu ubicación",
         color: COLOR_MESSENGER,
         zIndex: 10003,
@@ -111,41 +78,23 @@ function createRouteMarker(
     };
     const { label, title, color, zIndex } = config[kind];
 
-    if (canUseAdvancedMarkers()) {
-      const AdvancedMarkerElement = window.google!.maps!.marker!
-        .AdvancedMarkerElement;
-      return {
-        marker: new AdvancedMarkerElement({
-          map,
-          position,
-          title,
-          content: createPinElement(label, color),
-          zIndex,
-        }),
-      };
-    }
+    const marker = new maps.Marker({
+      map,
+      position,
+      title,
+      label: { text: label, color: "#ffffff", fontWeight: "bold", fontSize: "11px" },
+      icon: {
+        path: maps.SymbolPath.CIRCLE,
+        scale: 14,
+        fillColor: color,
+        fillOpacity: 1,
+        strokeColor: "#ffffff",
+        strokeWeight: 2,
+      },
+      zIndex,
+    });
 
-    if (canUseClassicMarkers()) {
-      return {
-        marker: new window.google!.maps!.Marker({
-          map,
-          position,
-          title,
-          label: { text: label, color: "white", fontWeight: "bold" },
-          icon: {
-            path: window.google!.maps!.SymbolPath.CIRCLE,
-            scale: 14,
-            fillColor: color,
-            fillOpacity: 1,
-            strokeColor: "#ffffff",
-            strokeWeight: 2,
-          },
-          zIndex,
-        }),
-      };
-    }
-
-    return null;
+    return { marker };
   } catch {
     return null;
   }

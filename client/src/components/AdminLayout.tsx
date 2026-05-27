@@ -71,6 +71,7 @@ export default function AdminLayout({
   });
 
   const { loading, user, logout } = useAuth();
+  const [, setLocation] = useLocation();
 
   const isLocalDev =
     typeof window !== "undefined" &&
@@ -166,10 +167,11 @@ export default function AdminLayout({
         user={effectiveUser}
         logoutAction={async () => {
           if (isLocalDev && !user) {
-            window.location.href = "/";
+            window.location.href = "/login";
             return;
           }
           await logout();
+          setLocation("/login", { replace: true });
         }}
       >
         {children}

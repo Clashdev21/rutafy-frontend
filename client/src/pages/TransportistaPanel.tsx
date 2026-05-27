@@ -2393,7 +2393,7 @@ export default function TransportistaPanel() {
 
   const handleLogout = async () => {
     await logout();
-    setLocation("/");
+    setLocation("/login", { replace: true });
   };
 
   const openManualAddressModal = useCallback((which: "origin" | "destination") => {

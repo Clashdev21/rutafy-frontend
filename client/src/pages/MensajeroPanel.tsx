@@ -15,6 +15,10 @@ import {
 } from "@/hooks/useMessengerOperationalState";
 import { MessengerRouteMap } from "@/components/MessengerRouteMap";
 import { OperationalParticipantCard } from "@/components/OperationalParticipantCard";
+import {
+  ProtectedEvidenceImage,
+  ProtectedEvidenceViewLink,
+} from "@/components/ProtectedEvidenceImage";
 import { RouteNavigationLinks } from "@/components/RouteNavigationLinks";
 import {
   formatServiceRouteEndpoint,
@@ -623,11 +627,32 @@ function InServiceView(props: {
                   onClick={() => void props.onOpenCloseValidationSafe(props.service)}
                   aria-label={`${props.evidences.length} evidencias registradas, actualizar lista`}
                 >
-                  <img
-                    src={props.evidences[0].file_url}
-                    alt=""
-                    className="h-8 w-8 shrink-0 rounded-md border border-gray-200/90 object-cover opacity-90"
-                  />
+                  {(() => {
+                    const first = props.evidences[0];
+                    const evidenceId = String(first.evidence_id ?? "").trim();
+                    const serviceId = props.service.service_id;
+                    if (evidenceId && serviceId) {
+                      return (
+                        <ProtectedEvidenceImage
+                          serviceId={serviceId}
+                          evidenceId={evidenceId}
+                          alt=""
+                          className="h-8 w-8 shrink-0 rounded-md border border-gray-200/90 object-cover opacity-90"
+                        />
+                      );
+                    }
+                    const legacyUrl = buildAbsoluteUrl(first.file_url);
+                    if (legacyUrl) {
+                      return (
+                        <img
+                          src={legacyUrl}
+                          alt=""
+                          className="h-8 w-8 shrink-0 rounded-md border border-gray-200/90 object-cover opacity-90"
+                        />
+                      );
+                    }
+                    return null;
+                  })()}
                   <span className="rounded-full bg-[#2A9D8F]/12 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-[#2A9D8F]">
                     {props.evidences.length}
                   </span>
@@ -1665,7 +1690,12 @@ export default function MensajeroPanel() {
                 ) : (
                   <div className="space-y-3">
                     {selectedServiceEvidences.map((evidence) => {
-                      const evidenceUrl = buildAbsoluteUrl(evidence.file_url);
+                      const evidenceId = String(evidence.evidence_id ?? "").trim();
+                      const serviceId = selectedService.service_id;
+                      const useProtected = Boolean(evidenceId && serviceId);
+                      const legacyUrl = !useProtected
+                        ? buildAbsoluteUrl(evidence.file_url)
+                        : null;
 
                       return (
                         <div
@@ -1673,9 +1703,16 @@ export default function MensajeroPanel() {
                           className="rounded-lg border bg-white p-3 flex flex-col md:flex-row md:items-center gap-4"
                         >
                           <div className="w-full md:w-32 h-24 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center">
-                            {evidenceUrl ? (
+                            {useProtected ? (
+                              <ProtectedEvidenceImage
+                                serviceId={serviceId}
+                                evidenceId={evidenceId}
+                                alt="Evidencia"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : legacyUrl ? (
                               <img
-                                src={evidenceUrl}
+                                src={legacyUrl}
                                 alt="Evidencia"
                                 className="w-full h-full object-cover"
                               />
@@ -1706,16 +1743,23 @@ export default function MensajeroPanel() {
                             </p>
                           </div>
 
-                          {evidenceUrl && (
+                          {useProtected ? (
+                            <ProtectedEvidenceViewLink
+                              serviceId={serviceId}
+                              evidenceId={evidenceId}
+                              label="Ver foto"
+                              className="inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-medium hover:bg-gray-50 no-underline"
+                            />
+                          ) : legacyUrl ? (
                             <a
-                              href={evidenceUrl}
+                              href={legacyUrl}
                               target="_blank"
                               rel="noreferrer"
                               className="inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-medium hover:bg-gray-50"
                             >
                               Ver foto
                             </a>
-                          )}
+                          ) : null}
                         </div>
                       );
                     })}

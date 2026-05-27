@@ -1274,7 +1274,7 @@ export function useMessengerOperationalState() {
 
   const handleLogout = async () => {
     await logout();
-    setLocation("/");
+    setLocation("/login", { replace: true });
   };
 
   const handleAcceptService = async (
