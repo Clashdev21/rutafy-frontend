@@ -708,6 +708,14 @@ function formatDateTime(value: string): string {
   }
 }
 
+function formatLastRefreshAge(lastSuccessfulRefreshAt: number | null): string | null {
+  if (lastSuccessfulRefreshAt == null) return null;
+  const ageMs = Date.now() - lastSuccessfulRefreshAt;
+  if (!Number.isFinite(ageMs) || ageMs < 0) return null;
+  if (ageMs < 60_000) return "hace <1 min";
+  return `hace ~${Math.floor(ageMs / 60_000)} min`;
+}
+
 function toInputDateTimeLocal(value?: string | null): string {
   if (!value) return "";
   const d = new Date(value);
@@ -1473,6 +1481,7 @@ const statusBorderColors: Record<string, string> = {
 
 type TransportistaHomeViewProps = {
   activeService: LocalServiceItem | null;
+  degradedBannerText?: string | null;
   isIdle: boolean;
   isSearching: boolean;
   isAssigned: boolean;
@@ -1528,6 +1537,7 @@ type TransportistaHomeViewProps = {
 function TransportistaHomeView(props: TransportistaHomeViewProps) {
   const {
     activeService,
+    degradedBannerText,
     isIdle,
     isSearching,
     isAssigned,
@@ -1613,6 +1623,11 @@ function TransportistaHomeView(props: TransportistaHomeViewProps) {
 
   return (
     <div className="space-y-5">
+      {degradedBannerText ? (
+        <div className="rounded-xl border border-amber-200/80 bg-amber-50/90 px-3 py-2 text-xs font-medium text-amber-800">
+          {degradedBannerText}
+        </div>
+      ) : null}
       <Card className="border-0 shadow-sm bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] text-white overflow-hidden">
         <CardContent className="p-4">
           {isSearching && activeService ? (
@@ -2061,6 +2076,8 @@ export default function TransportistaPanel() {
   const [originLocationCaptureStatus, setOriginLocationCaptureStatus] =
     useState<OriginLocationCaptureStatus>("idle");
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [lastSuccessfulRefreshAt, setLastSuccessfulRefreshAt] = useState<number | null>(null);
+  const [consecutiveHistoryFailures, setConsecutiveHistoryFailures] = useState(0);
   const [dismissedTerminalServiceId, setDismissedTerminalServiceId] = useState<string | null>(null);
 
   const [serviceMode, setServiceMode] = useState<ServiceMode>("LIBRE");
@@ -2267,6 +2284,8 @@ export default function TransportistaPanel() {
       );
       // #endregion
       setMyServices(normalized);
+      setLastSuccessfulRefreshAt(Date.now());
+      setConsecutiveHistoryFailures(0);
     } catch (error: unknown) {
       const message = axios.isAxiosError(error)
         ? (error.response?.data as { message?: string; error?: string })?.message ??
@@ -2275,11 +2294,32 @@ export default function TransportistaPanel() {
         : error instanceof Error
           ? error.message
           : "No fue posible cargar historial";
-      toast.error(message || "No fue posible cargar historial");
+      const errMsg = message || "No fue posible cargar historial";
+      setConsecutiveHistoryFailures((prev) => {
+        if (prev === 0) {
+          toast.error(errMsg);
+        }
+        return prev + 1;
+      });
     } finally {
       setIsLoadingHistory(false);
     }
   };
+
+  const showHistoryDegradedBanner = useMemo(() => {
+    if (consecutiveHistoryFailures >= 2) return true;
+    if (lastSuccessfulRefreshAt == null) return false;
+    return Date.now() - lastSuccessfulRefreshAt > 30_000;
+  }, [consecutiveHistoryFailures, lastSuccessfulRefreshAt]);
+
+  const historyDegradedBannerText = useMemo(() => {
+    if (!showHistoryDegradedBanner) return null;
+    const ageLabel = formatLastRefreshAge(lastSuccessfulRefreshAt);
+    if (ageLabel) {
+      return `Reconectando · datos actualizados ${ageLabel}`;
+    }
+    return "Sin conexión · mostrando última actualización";
+  }, [showHistoryDegradedBanner, lastSuccessfulRefreshAt]);
 
   const loadTransportistaHistoryRef = useRef(loadTransportistaHistory);
   loadTransportistaHistoryRef.current = loadTransportistaHistory;
@@ -2702,6 +2742,7 @@ export default function TransportistaPanel() {
         {activeTab === "home" && (
           <TransportistaHomeView
             activeService={activeService}
+            degradedBannerText={historyDegradedBannerText}
             isIdle={isIdle}
             isSearching={isSearching}
             isAssigned={isAssigned}
