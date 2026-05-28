@@ -392,7 +392,7 @@ function OfferView(props: {
         )}
       </div>
 
-      <div className="flex-1 px-6 py-6 space-y-6">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 py-6 space-y-6">
         <MessengerRouteMap
           service={props.offer}
           messengerPosition={props.messengerPosition}
@@ -426,7 +426,7 @@ function OfferView(props: {
         />
       </div>
 
-      <div className="px-6 pb-8 pt-4 border-t border-gray-100 space-y-3">
+      <div className="shrink-0 px-6 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] border-t border-gray-100 space-y-3">
         <Button
           type="button"
           disabled={props.isAccepting}
