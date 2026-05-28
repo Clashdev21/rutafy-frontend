@@ -23,13 +23,13 @@ import {
   ProtectedEvidenceViewLink,
 } from "@/components/ProtectedEvidenceImage";
 import { GpsFreshnessIndicator } from "@/components/GpsFreshnessIndicator";
+import { OperationalProximityMeter } from "@/components/OperationalProximityMeter";
 import { OperationalTimeline } from "@/components/OperationalTimeline";
 import { resolveOperationalCopy } from "@/lib/resolveOperationalCopy";
 import {
   formatServiceRouteEndpoint,
   parseServiceRouteCoords,
 } from "@/lib/formatOperationalLocation";
-import { resolveOperationalDistanceLabel } from "@/lib/resolveOperationalDistance";
 import { resolveOperationalTimeline } from "@/lib/resolveOperationalTimeline";
 import {
   hasOperationalParticipant,
@@ -590,29 +590,25 @@ function TransportistaOperationalTimeline({
   return <OperationalTimeline steps={steps} />;
 }
 
-function OperationalDistanceAwareness({
+function TransportistaOperationalProximity({
   activeService,
   geofenceState,
 }: {
   activeService: LocalServiceItem;
   geofenceState?: "AT_PICKUP" | "AT_DROPOFF" | null;
 }) {
-  const label = resolveOperationalDistanceLabel({
-    serviceStatus: activeService.status,
-    messengerLat: activeService.messengerLocation?.lat,
-    messengerLng: activeService.messengerLocation?.lng,
-    originLat: activeService.originCoords?.lat,
-    originLng: activeService.originCoords?.lng,
-    destinationLat: activeService.destinationCoords?.lat,
-    destinationLng: activeService.destinationCoords?.lng,
-    locationUpdatedAt: activeService.messengerLocation?.updatedAt,
-    geofenceState,
-  });
-
-  if (!label) return null;
-
   return (
-    <p className="text-xs font-medium leading-snug text-white/85">{label}</p>
+    <OperationalProximityMeter
+      serviceStatus={activeService.status}
+      geofenceState={geofenceState}
+      messengerLat={activeService.messengerLocation?.lat}
+      messengerLng={activeService.messengerLocation?.lng}
+      originLat={activeService.originCoords?.lat}
+      originLng={activeService.originCoords?.lng}
+      destinationLat={activeService.destinationCoords?.lat}
+      destinationLng={activeService.destinationCoords?.lng}
+      locationUpdatedAt={activeService.messengerLocation?.updatedAt}
+    />
   );
 }
 
@@ -1235,7 +1231,7 @@ function AssignedServiceView({
 
       <div className="flex flex-col gap-1.5">
         <GpsFreshnessIndicator updatedAt={activeService.messengerLocation?.updatedAt} />
-        <OperationalDistanceAwareness
+        <TransportistaOperationalProximity
           activeService={activeService}
           geofenceState={geofenceState}
         />
@@ -1343,7 +1339,7 @@ function InProgressServiceView({
 
       <div className="flex flex-col gap-1.5">
         <GpsFreshnessIndicator updatedAt={activeService.messengerLocation?.updatedAt} />
-        <OperationalDistanceAwareness
+        <TransportistaOperationalProximity
           activeService={activeService}
           geofenceState={geofenceState}
         />
