@@ -1616,7 +1616,7 @@ export function useMessengerOperationalState() {
         formData.append("lng", String(currentLng));
       }
 
-      formData.append("file", evidenceFile);
+      formData.append("file", evidenceFile, evidenceFile.name || "evidence.jpg");
 
       await http.post(`/v1/services/${service.service_id}/evidences`, formData, {
         timeout: 120_000,
