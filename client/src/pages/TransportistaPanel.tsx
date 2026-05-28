@@ -2179,11 +2179,14 @@ export default function TransportistaPanel() {
   } = useTransportistaOperationalState(myServices, activeService);
 
   const transportistaRealtimeToken = getToken();
-  const { activeGeofenceState } = useTransportistaRealtime({
+  const { activeGeofenceState, reconnectRealtime } = useTransportistaRealtime({
     enabled: !loading && Boolean(user) && user?.appRole === "TRANSPORTISTA",
     token: transportistaRealtimeToken,
     activeServiceId: activeService?.id ?? null,
   });
+  const reconnectRealtimeRef = useRef(reconnectRealtime);
+  reconnectRealtimeRef.current = reconnectRealtime;
+  const lastWakeRecoveryAtRef = useRef(0);
 
   useEffect(() => {
     console.debug("[transportista-operational-phase]", operationalPhase);
@@ -2326,6 +2329,30 @@ export default function TransportistaPanel() {
 
   const isLoadingHistoryRef = useRef(isLoadingHistory);
   isLoadingHistoryRef.current = isLoadingHistory;
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+
+    const runWakeRecovery = () => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastWakeRecoveryAtRef.current < 1500) return;
+      lastWakeRecoveryAtRef.current = now;
+
+      if (loading) return;
+      if (!user || user.appRole !== "TRANSPORTISTA") return;
+
+      void loadTransportistaHistoryRef.current();
+      reconnectRealtimeRef.current();
+    };
+
+    document.addEventListener("visibilitychange", runWakeRecovery);
+    window.addEventListener("pageshow", runWakeRecovery);
+    return () => {
+      document.removeEventListener("visibilitychange", runWakeRecovery);
+      window.removeEventListener("pageshow", runWakeRecovery);
+    };
+  }, [loading, user]);
 
   useEffect(() => {
     if (loading) return;

@@ -1,6 +1,6 @@
 import { buildRutafyRealtimeWebSocketUrl } from "@/lib/messengerRealtimeWs";
 import type { OperationalGeofenceState } from "@/lib/resolveOperationalCopy";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type UseTransportistaRealtimeParams = {
   enabled: boolean;
@@ -190,5 +190,9 @@ export function useTransportistaRealtime({
     };
   }, [enabled, token, reconnectVersion]);
 
-  return { activeGeofenceState, geofenceByServiceId };
+  const reconnectRealtime = useCallback(() => {
+    setReconnectVersion((v) => v + 1);
+  }, []);
+
+  return { activeGeofenceState, geofenceByServiceId, reconnectRealtime };
 }

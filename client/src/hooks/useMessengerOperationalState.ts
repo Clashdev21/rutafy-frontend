@@ -609,6 +609,11 @@ export function useMessengerOperationalState() {
   const refreshAvailableServicesRef = useRef(refreshAvailableServices);
   refreshAvailableServicesRef.current = refreshAvailableServices;
 
+  const refreshMyServicesRef = useRef(refreshMyServices);
+  refreshMyServicesRef.current = refreshMyServices;
+
+  const lastWakeRecoveryAtRef = useRef(0);
+
   const heartbeatTimerRef = useRef<number | null>(null);
   const lastHeartbeatLatRef = useRef<number | null>(null);
   const lastHeartbeatLngRef = useRef<number | null>(null);
@@ -762,6 +767,33 @@ export function useMessengerOperationalState() {
 
     return () => window.clearInterval(timer);
   }, [loading, isOnline, actorId, refreshMyServices, refreshAvailableServices]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+
+    const runWakeRecovery = () => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastWakeRecoveryAtRef.current < 1500) return;
+      lastWakeRecoveryAtRef.current = now;
+
+      if (loading) return;
+      if (!actorId || !isValidUuid(actorId)) return;
+
+      void refreshMyServicesRef.current();
+      if (isOnline) {
+        void refreshAvailableServicesRef.current();
+        setRealtimeReconnectVersion((v) => v + 1);
+      }
+    };
+
+    document.addEventListener("visibilitychange", runWakeRecovery);
+    window.addEventListener("pageshow", runWakeRecovery);
+    return () => {
+      document.removeEventListener("visibilitychange", runWakeRecovery);
+      window.removeEventListener("pageshow", runWakeRecovery);
+    };
+  }, [loading, actorId, isOnline]);
 
   useEffect(() => {
     if (locationStatus !== "fresh" || !isOnline) return;
