@@ -104,6 +104,46 @@ function restErrorMessage(error: any, fallback: string): string {
   return fallback;
 }
 
+export function formatEvidenceFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "-";
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1) return `${mb.toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function validateEvidenceFileForUpload(file: File): string | null {
+  if (file.size <= 0) {
+    return "El archivo está vacío. Vuelve a tomar o elegir la foto.";
+  }
+  const type = String(file.type ?? "").trim().toLowerCase();
+  if (!type.startsWith("image/")) {
+    return "Solo se permiten imágenes. Elige un archivo de imagen válido.";
+  }
+  return null;
+}
+
+function evidenceUploadErrorMessage(error: unknown, fallback: string): string {
+  const err = error as {
+    response?: { data?: { error?: string; detail?: string; message?: string } };
+    code?: string;
+    message?: string;
+  };
+  const d = err?.response?.data;
+  if (d && typeof d === "object") {
+    const msg = d.error ?? d.detail ?? d.message;
+    if (typeof msg === "string" && msg.trim()) return msg.trim();
+  }
+  const code = err?.code ?? "";
+  const message = typeof err?.message === "string" ? err.message : "";
+  if (code === "ECONNABORTED" || /timeout/i.test(message)) {
+    return "La subida tardó demasiado. Intenta nuevamente o usa una foto más pequeña.";
+  }
+  if (code === "ERR_NETWORK" || message === "Network Error") {
+    return "No se pudo completar la subida. Verifica tu conexión o intenta con una foto más pequeña.";
+  }
+  return restErrorMessage(error, fallback);
+}
+
 /** Origen público para URLs absolutas (p. ej. evidencias); alineado con el fallback que antes usaba fetch. */
 function getPublicApiOrigin(): string {
   const raw =
@@ -1535,6 +1575,25 @@ export function useMessengerOperationalState() {
       return false;
     }
 
+    const fileValidationError = validateEvidenceFileForUpload(evidenceFile);
+    if (fileValidationError) {
+      toast.error(fileValidationError);
+      return false;
+    }
+
+    const traceId = buildTraceId("evidence");
+    const uploadStartedAt = Date.now();
+
+    if (import.meta.env.DEV) {
+      console.info("[evidence-upload] start", {
+        traceId,
+        serviceId: service.service_id,
+        name: evidenceFile.name,
+        type: evidenceFile.type,
+        size: evidenceFile.size,
+      });
+    }
+
     setUploadingEvidenceServiceId(service.service_id);
 
     try {
@@ -1560,18 +1619,36 @@ export function useMessengerOperationalState() {
       formData.append("file", evidenceFile);
 
       await http.post(`/v1/services/${service.service_id}/evidences`, formData, {
+        timeout: 120_000,
         headers: {
-          "Content-Type": undefined,
-          "x-trace-id": buildTraceId("evidence"),
+          "x-trace-id": traceId,
         },
       });
+
+      if (import.meta.env.DEV) {
+        console.info("[evidence-upload] success", {
+          traceId,
+          serviceId: service.service_id,
+          ms: Date.now() - uploadStartedAt,
+        });
+      }
 
       toast.success("Evidencia subida correctamente");
       clearEvidenceDraft();
       await loadServiceEvidences(service.service_id);
       return true;
-    } catch (error: any) {
-      toast.error(restErrorMessage(error, "No se pudo subir la evidencia"));
+    } catch (error: unknown) {
+      if (import.meta.env.DEV) {
+        const err = error as { code?: string; message?: string };
+        console.warn("[evidence-upload] error", {
+          traceId,
+          serviceId: service.service_id,
+          ms: Date.now() - uploadStartedAt,
+          code: err?.code,
+          message: err?.message,
+        });
+      }
+      toast.error(evidenceUploadErrorMessage(error, "No se pudo subir la evidencia"));
       return false;
     } finally {
       setUploadingEvidenceServiceId(null);

@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   buildAbsoluteUrl,
+  formatEvidenceFileSize,
   isValidUuid,
   useMessengerOperationalState,
   type BackendService,
@@ -687,6 +688,13 @@ function InServiceView(props: {
               alt="Vista previa"
               className="mt-3 max-h-24 w-full rounded-lg border border-gray-200/80 object-contain"
             />
+          ) : null}
+          {props.evidenceFile ? (
+            <p className="mt-2 text-xs text-gray-600">
+              <span className="font-medium text-gray-800">{props.evidenceFile.name}</span>
+              {" · "}
+              {formatEvidenceFileSize(props.evidenceFile.size)}
+            </p>
           ) : null}
           {props.evidenceFile ? (
             <Button
@@ -1635,7 +1643,7 @@ export default function MensajeroPanel() {
                       </p>
                       <p>
                         <strong>Tamaño:</strong>{" "}
-                        {evidenceFile ? `${(evidenceFile.size / 1024).toFixed(1)} KB` : "-"}
+                        {evidenceFile ? formatEvidenceFileSize(evidenceFile.size) : "-"}
                       </p>
                       <p>
                         <strong>GPS:</strong>{" "}

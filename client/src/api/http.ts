@@ -1,4 +1,4 @@
-import axios, { type InternalAxiosRequestConfig } from "axios";
+import axios, { AxiosHeaders, type InternalAxiosRequestConfig } from "axios";
 import {
   clearSession,
   getRefreshToken,
@@ -53,6 +53,21 @@ function isPublicAuthRoute(config: InternalAxiosRequestConfig): boolean {
 function isAuthRefreshExempt(config: InternalAxiosRequestConfig): boolean {
   if (config.skipAuthRefresh) return true;
   return isPublicAuthRoute(config);
+}
+
+/** Axios 1.x: quitar Content-Type en multipart para que el navegador envíe el boundary. */
+function stripContentTypeForFormData(config: InternalAxiosRequestConfig): void {
+  if (!(config.data instanceof FormData)) return;
+  const headers = config.headers;
+  if (!headers) return;
+  if (headers instanceof AxiosHeaders) {
+    headers.delete("Content-Type");
+    headers.delete("content-type");
+    return;
+  }
+  const record = headers as Record<string, unknown>;
+  delete record["Content-Type"];
+  delete record["content-type"];
 }
 
 function redirectToLoginIfNeeded(): void {
@@ -110,6 +125,7 @@ function refreshAccessTokenShared(): Promise<string | null> {
 }
 
 http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  stripContentTypeForFormData(config);
   if (!isPublicAuthRoute(config)) {
     const token = getToken();
     if (token && !config.headers.Authorization) {
