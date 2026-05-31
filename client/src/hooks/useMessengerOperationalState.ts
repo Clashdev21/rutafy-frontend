@@ -1557,6 +1557,15 @@ export function useMessengerOperationalState() {
   };
 
   const uploadEvidenceForService = async (service: BackendService) => {
+    console.info("[evidence-upload] file", {
+      name: evidenceFile?.name,
+      type: evidenceFile?.type,
+      size: evidenceFile?.size,
+      lastModified: evidenceFile?.lastModified,
+    });
+
+    console.info("[evidence-upload] api", import.meta.env.VITE_RUTAFY_API_BASE);
+
     const actorIdForEvidence =
       user?.actor_id != null ? String(user.actor_id).trim() : "";
 
@@ -1618,6 +1627,8 @@ export function useMessengerOperationalState() {
 
       formData.append("file", evidenceFile, evidenceFile.name || "evidence.jpg");
 
+      console.info("[evidence-upload] formData-ready");
+
       await http.post(`/v1/services/${service.service_id}/evidences`, formData, {
         timeout: 120_000,
         headers: {
@@ -1638,16 +1649,16 @@ export function useMessengerOperationalState() {
       await loadServiceEvidences(service.service_id);
       return true;
     } catch (error: unknown) {
-      if (import.meta.env.DEV) {
-        const err = error as { code?: string; message?: string };
-        console.warn("[evidence-upload] error", {
-          traceId,
-          serviceId: service.service_id,
-          ms: Date.now() - uploadStartedAt,
-          code: err?.code,
-          message: err?.message,
-        });
-      }
+      const err = error as {
+        code?: string;
+        message?: string;
+        response?: { data?: unknown };
+      };
+      console.error("[evidence-upload] error", {
+        code: err?.code,
+        message: err?.message,
+        response: err?.response?.data,
+      });
       toast.error(evidenceUploadErrorMessage(error, "No se pudo subir la evidencia"));
       return false;
     } finally {
