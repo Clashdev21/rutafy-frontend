@@ -30,3 +30,15 @@ export function formatGpsAge(updatedAt?: string | null, now = Date.now()): strin
   if (minutes < 1) return "hace ~1 min";
   return `hace ~${Math.floor(minutes)} min`;
 }
+
+export function formatGpsAgeSeconds(
+  updatedAt?: string | null,
+  now = Date.now(),
+): string | null {
+  const ts = parseUpdatedAtMs(updatedAt);
+  if (ts == null) return null;
+
+  const sec = Math.max(0, Math.floor((now - ts) / 1000));
+  if (sec < 60) return `hace ${sec} s`;
+  return `hace ${Math.floor(sec / 60)} min`;
+}

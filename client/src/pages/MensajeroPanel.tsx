@@ -15,6 +15,7 @@ import {
   type ServiceStatus,
 } from "@/hooks/useMessengerOperationalState";
 import { MessengerRouteMap } from "@/components/MessengerRouteMap";
+import { OperationalTrackingLine } from "@/components/OperationalTrackingLine";
 import { OperationalParticipantCard } from "@/components/OperationalParticipantCard";
 import {
   ProtectedEvidenceImage,
@@ -25,6 +26,7 @@ import {
   formatServiceRouteEndpoint,
   parseServiceRouteCoords,
 } from "@/lib/formatOperationalLocation";
+import { resolveMessengerSelfTrackingLine } from "@/lib/resolveOperationalDistance";
 import {
   resolveOperationalCopy,
   type OperationalGeofenceState,
@@ -449,9 +451,34 @@ function OfferView(props: {
   );
 }
 
+function resolveMessengerTrackingLineForService(
+  service: BackendService,
+  currentLat: number | null,
+  currentLng: number | null,
+  locationFresh: boolean,
+  geofenceState?: OperationalGeofenceState | null,
+): string | null {
+  const origin = parseServiceRouteCoords(service, "origin");
+  const destination = parseServiceRouteCoords(service, "destination");
+  return resolveMessengerSelfTrackingLine({
+    serviceStatus: service.status,
+    messengerLat: currentLat,
+    messengerLng: currentLng,
+    originLat: origin?.lat,
+    originLng: origin?.lng,
+    destinationLat: destination?.lat,
+    destinationLng: destination?.lng,
+    locationFresh,
+    geofenceState,
+  });
+}
+
 function AssignedView(props: {
   service: BackendService;
   messengerPosition: MessengerMapPosition | null;
+  currentLat: number | null;
+  currentLng: number | null;
+  locationFresh: boolean;
   onStart: () => Promise<void> | void;
   isStarting: boolean;
   geofenceState?: OperationalGeofenceState | null;
@@ -469,6 +496,19 @@ function AssignedView(props: {
     <div className="min-h-screen bg-orange-50 flex flex-col px-6 py-6">
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6">
         <h1 className="text-2xl font-bold text-gray-900">Servicio asignado</h1>
+
+        <OperationalTrackingLine
+          className="text-center text-amber-900/95"
+          resolveLine={() =>
+            resolveMessengerTrackingLineForService(
+              props.service,
+              props.currentLat,
+              props.currentLng,
+              props.locationFresh,
+              props.geofenceState,
+            )
+          }
+        />
 
         <div className="space-y-5 rounded-xl border border-orange-100 bg-white p-5 shadow-sm">
           <MessengerRouteMap
@@ -530,6 +570,9 @@ function AssignedView(props: {
 function InServiceView(props: {
   service: BackendService;
   messengerPosition: MessengerMapPosition | null;
+  currentLat: number | null;
+  currentLng: number | null;
+  locationFresh: boolean;
   setSelectedService: Dispatch<SetStateAction<BackendService | null>>;
   closePin: string;
   setClosePin: Dispatch<SetStateAction<string>>;
@@ -572,6 +615,19 @@ function InServiceView(props: {
     <div className="min-h-screen bg-green-50 flex flex-col px-6 py-6">
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6">
         <h1 className="text-2xl font-bold text-gray-900">Servicio en curso</h1>
+
+        <OperationalTrackingLine
+          className="text-center text-green-900/95"
+          resolveLine={() =>
+            resolveMessengerTrackingLineForService(
+              props.service,
+              props.currentLat,
+              props.currentLng,
+              props.locationFresh,
+              props.geofenceState,
+            )
+          }
+        />
 
         <div className="space-y-5 rounded-xl border border-green-200 bg-white p-5 shadow-sm">
           <MessengerRouteMap
@@ -909,6 +965,9 @@ export default function MensajeroPanel() {
       <AssignedView
         service={dispatchCurrentService}
         messengerPosition={messengerMapPosition}
+        currentLat={currentLat}
+        currentLng={currentLng}
+        locationFresh={locationStatus === "fresh"}
         onStart={() => handleStartService(dispatchCurrentService)}
         isStarting={startingServiceId === dispatchCurrentService.service_id}
         geofenceState={activeGeofenceState}
@@ -920,6 +979,9 @@ export default function MensajeroPanel() {
       <InServiceView
         service={dispatchCurrentService}
         messengerPosition={messengerMapPosition}
+        currentLat={currentLat}
+        currentLng={currentLng}
+        locationFresh={locationStatus === "fresh"}
         setSelectedService={setSelectedService}
         closePin={closePin}
         setClosePin={setClosePin}

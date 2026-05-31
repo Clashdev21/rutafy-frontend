@@ -24,6 +24,7 @@ import {
 } from "@/components/ProtectedEvidenceImage";
 import { GpsFreshnessIndicator } from "@/components/GpsFreshnessIndicator";
 import { OperationalProximityMeter } from "@/components/OperationalProximityMeter";
+import { OperationalTrackingLine } from "@/components/OperationalTrackingLine";
 import { OperationalTimeline } from "@/components/OperationalTimeline";
 import { resolveOperationalCopy } from "@/lib/resolveOperationalCopy";
 import {
@@ -31,6 +32,7 @@ import {
   parseServiceRouteCoords,
 } from "@/lib/formatOperationalLocation";
 import { resolveOperationalTimeline } from "@/lib/resolveOperationalTimeline";
+import { resolveTransportistaTrackingLine } from "@/lib/resolveOperationalDistance";
 import {
   hasOperationalParticipant,
   normalizeOperationalParticipant,
@@ -588,6 +590,34 @@ function TransportistaOperationalTimeline({
   });
 
   return <OperationalTimeline steps={steps} />;
+}
+
+function TransportistaOperationalTrackingLine({
+  activeService,
+  geofenceState,
+}: {
+  activeService: LocalServiceItem;
+  geofenceState?: "AT_PICKUP" | "AT_DROPOFF" | null;
+}) {
+  return (
+    <OperationalTrackingLine
+      variant="onColor"
+      resolveLine={(now) =>
+        resolveTransportistaTrackingLine({
+          serviceStatus: activeService.status,
+          messengerLat: activeService.messengerLocation?.lat,
+          messengerLng: activeService.messengerLocation?.lng,
+          originLat: activeService.originCoords?.lat,
+          originLng: activeService.originCoords?.lng,
+          destinationLat: activeService.destinationCoords?.lat,
+          destinationLng: activeService.destinationCoords?.lng,
+          locationUpdatedAt: activeService.messengerLocation?.updatedAt,
+          geofenceState,
+          now,
+        })
+      }
+    />
+  );
 }
 
 function TransportistaOperationalProximity({
@@ -1230,6 +1260,10 @@ function AssignedServiceView({
       />
 
       <div className="flex flex-col gap-1.5">
+        <TransportistaOperationalTrackingLine
+          activeService={activeService}
+          geofenceState={geofenceState}
+        />
         <GpsFreshnessIndicator updatedAt={activeService.messengerLocation?.updatedAt} />
         <TransportistaOperationalProximity
           activeService={activeService}
@@ -1338,6 +1372,10 @@ function InProgressServiceView({
       />
 
       <div className="flex flex-col gap-1.5">
+        <TransportistaOperationalTrackingLine
+          activeService={activeService}
+          geofenceState={geofenceState}
+        />
         <GpsFreshnessIndicator updatedAt={activeService.messengerLocation?.updatedAt} />
         <TransportistaOperationalProximity
           activeService={activeService}
