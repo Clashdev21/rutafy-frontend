@@ -1,4 +1,11 @@
 import type { OpsServiceLocation } from "@/api/admin-ops-service";
+import {
+  MAP_VISIBLE_OPERATIONAL_STATUSES,
+  normalizeGeofenceState,
+  normalizeOperationalStatus,
+  type GeofenceState,
+  type OperationalStatus,
+} from "@/lib/adminOpsConstants";
 
 export type OpsMessengerState =
   | "AVAILABLE"
@@ -20,7 +27,6 @@ export type OpsMapMessenger = {
   ops_state: OpsMessengerState;
   is_online?: boolean;
   active_service?: OpsActiveService | null;
-  /** Coordenadas unificadas para mapa (desde map_lat/map_lng o lat/lng). */
   lat?: number | null;
   lng?: number | null;
   map_lat?: number | null;
@@ -28,24 +34,52 @@ export type OpsMapMessenger = {
   location_updated_at?: string | null;
 };
 
-export type RequestedOpsServiceFlags = {
+export type OpsMapServiceFlags = {
   age_min?: number | null;
   stuck_level?: string | null;
   sla_pickup_breach?: boolean | null;
+  sla_delivery_breach?: boolean | null;
+  idle_min?: number | null;
+  open_alerts?: number | null;
+  heartbeat_stale?: boolean | null;
+  service_stopped?: boolean | null;
+  operational_inconsistency?: boolean | null;
 };
 
-export type RequestedOpsService = {
+/** Servicio en mapa / listas del centro de control (requested + active + fallback). */
+export type OpsMapService = {
   service_id: string;
   service_short?: string | null;
   status?: string | null;
+  dispatch_status?: string | null;
+  geofence_state?: GeofenceState | string | null;
   service_type?: string | null;
   created_at?: string | null;
+  mensajero_id?: string | null;
+  assigned_messenger_id?: string | null;
+  messenger_name?: string | null;
   requester_company_id?: string | null;
   company_name?: string | null;
+  requester_plate?: string | null;
+  requester_vehicle_type?: string | null;
+  requester_vehicle_reference?: string | null;
   origin?: OpsServiceLocation | null;
   destination?: OpsServiceLocation | null;
-  operational_flags?: RequestedOpsServiceFlags | null;
+  eta_pickup_at?: string | null;
+  eta_delivery_at?: string | null;
+  sla_pickup_deadline_at?: string | null;
+  sla_delivery_deadline_at?: string | null;
+  operational_flags?: OpsMapServiceFlags | null;
 };
+
+/** Alias explícito para capas del snapshot admin ops map. */
+export type AdminOpsMapService = OpsMapService;
+
+/** @deprecated Alias de OpsMapService */
+export type RequestedOpsService = OpsMapService;
+
+/** @deprecated Alias de RequestedOpsServiceFlags */
+export type RequestedOpsServiceFlags = OpsMapServiceFlags;
 
 export type AdminOpsMapSnapshotResponse = {
   trace_id?: string;
@@ -53,13 +87,20 @@ export type AdminOpsMapSnapshotResponse = {
   messengers?: OpsMapMessenger[];
   items?: OpsMapMessenger[];
   requested_services?: unknown[];
+  active_services?: unknown[];
+  services?: unknown[];
 };
 
 export type AdminOpsMapSnapshot = {
   trace_id?: string;
   limit: number;
   messengers: OpsMapMessenger[];
-  requested_services: RequestedOpsService[];
+  /** Lista unificada sin duplicados (prioridad: active > requested > items fallback). */
+  map_services: OpsMapService[];
+  /** Capa REQUESTED del backend (normalizada). */
+  requested_services: OpsMapService[];
+  /** Capa CLAIMED/STARTED del backend (normalizada). */
+  active_services: OpsMapService[];
 };
 
 export type GetAdminOpsMapSnapshotOptions = {
@@ -121,6 +162,13 @@ function toFiniteNumber(value: unknown): number | null {
   return null;
 }
 
+function toOptionalBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (value === "true" || value === 1 || value === "1") return true;
+  if (value === "false" || value === 0 || value === "0") return false;
+  return null;
+}
+
 function pick<T>(
   rec: Record<string, unknown>,
   snake: string,
@@ -141,24 +189,47 @@ function normalizeLocation(raw: unknown): OpsServiceLocation | null {
   return { label, sub_location, lat, lng, node: null };
 }
 
-function normalizeRequestedFlags(raw: unknown): RequestedOpsServiceFlags | null {
+function normalizeServiceFlags(raw: unknown): OpsMapServiceFlags | null {
   if (!raw || typeof raw !== "object") return null;
   const rec = raw as Record<string, unknown>;
   const ageMin = pick(rec, "age_min", toFiniteNumber);
   const stuckLevel = pick(rec, "stuck_level", toOptionalString);
-  const slaPickupBreach =
-    rec.sla_pickup_breach === true ||
-    rec.slaPickupBreach === true ||
-    rec.sla_pickup_breach === "true"
-      ? true
-      : rec.sla_pickup_breach === false || rec.slaPickupBreach === false
-        ? false
-        : null;
-  if (ageMin == null && !stuckLevel && slaPickupBreach == null) return null;
+  const slaPickupBreach = pick(rec, "sla_pickup_breach", toOptionalBoolean);
+  const slaDeliveryBreach = pick(rec, "sla_delivery_breach", toOptionalBoolean);
+  const idleMin = pick(rec, "idle_min", toFiniteNumber);
+  const openAlerts = pick(rec, "open_alerts", toFiniteNumber);
+  const heartbeatStale = pick(rec, "heartbeat_stale", toOptionalBoolean);
+  const serviceStopped = pick(rec, "service_stopped", toOptionalBoolean);
+  const operationalInconsistency = pick(
+    rec,
+    "operational_inconsistency",
+    toOptionalBoolean,
+  );
+
+  if (
+    ageMin == null &&
+    !stuckLevel &&
+    slaPickupBreach == null &&
+    slaDeliveryBreach == null &&
+    idleMin == null &&
+    openAlerts == null &&
+    heartbeatStale == null &&
+    serviceStopped == null &&
+    operationalInconsistency == null
+  ) {
+    return null;
+  }
+
   return {
     age_min: ageMin,
     stuck_level: stuckLevel,
     sla_pickup_breach: slaPickupBreach,
+    sla_delivery_breach: slaDeliveryBreach,
+    idle_min: idleMin,
+    open_alerts: openAlerts,
+    heartbeat_stale: heartbeatStale,
+    service_stopped: serviceStopped,
+    operational_inconsistency: operationalInconsistency,
   };
 }
 
@@ -226,25 +297,133 @@ function normalizeMessenger(raw: unknown): OpsMapMessenger | null {
   };
 }
 
-function normalizeRequestedService(raw: unknown): RequestedOpsService | null {
+function normalizeMapService(raw: unknown): OpsMapService | null {
   if (!raw || typeof raw !== "object") return null;
   const rec = raw as Record<string, unknown>;
   const serviceId = String(rec.service_id ?? rec.serviceId ?? "").trim();
   if (!serviceId) return null;
 
+  const statusRaw = pick(rec, "status", toOptionalString);
+  const opStatus = normalizeOperationalStatus(statusRaw);
+  if (!opStatus || !MAP_VISIBLE_OPERATIONAL_STATUSES.includes(opStatus)) {
+    return null;
+  }
+
+  const geofenceRaw = pick(rec, "geofence_state", toOptionalString);
+  const mensajeroId =
+    pick(rec, "mensajero_id", toOptionalString) ??
+    pick(rec, "assigned_messenger_id", toOptionalString);
+
   return {
     service_id: serviceId,
     service_short: pick(rec, "service_short", toOptionalString),
-    status: pick(rec, "status", toOptionalString),
+    status: opStatus,
+    dispatch_status: pick(rec, "dispatch_status", toOptionalString),
+    geofence_state: normalizeGeofenceState(geofenceRaw) ?? geofenceRaw,
     service_type: pick(rec, "service_type", toOptionalString),
     created_at: pick(rec, "created_at", toOptionalString),
+    mensajero_id: mensajeroId,
+    assigned_messenger_id:
+      pick(rec, "assigned_messenger_id", toOptionalString) ?? mensajeroId,
+    messenger_name: pick(rec, "messenger_name", toOptionalString),
     requester_company_id: pick(rec, "requester_company_id", toOptionalString),
     company_name: pick(rec, "company_name", toOptionalString),
+    requester_plate: pick(rec, "requester_plate", toOptionalString),
+    requester_vehicle_type: pick(rec, "requester_vehicle_type", toOptionalString),
+    requester_vehicle_reference: pick(
+      rec,
+      "requester_vehicle_reference",
+      toOptionalString,
+    ),
     origin: normalizeLocation(rec.origin),
     destination: normalizeLocation(rec.destination),
-    operational_flags: normalizeRequestedFlags(
+    eta_pickup_at: pick(rec, "eta_pickup_at", toOptionalString),
+    eta_delivery_at: pick(rec, "eta_delivery_at", toOptionalString),
+    sla_pickup_deadline_at: pick(rec, "sla_pickup_deadline_at", toOptionalString),
+    sla_delivery_deadline_at: pick(
+      rec,
+      "sla_delivery_deadline_at",
+      toOptionalString,
+    ),
+    operational_flags: normalizeServiceFlags(
       rec.operational_flags ?? rec.operationalFlags,
     ),
+  };
+}
+
+function normalizeMapServiceList(raw: unknown[] | undefined): OpsMapService[] {
+  if (!Array.isArray(raw)) return [];
+  const out: OpsMapService[] = [];
+  for (const item of raw) {
+    const normalized = normalizeMapService(item);
+    if (normalized) out.push(normalized);
+  }
+  return out;
+}
+
+/**
+ * Fallback mínimo desde items[].active_service cuando active_services[] viene vacío.
+ */
+function normalizeMapServiceFromMessengerFallback(
+  messenger: OpsMapMessenger,
+): OpsMapService | null {
+  const active = messenger.active_service;
+  if (!active?.service_id) return null;
+
+  const opStatus = normalizeOperationalStatus(active.status);
+  if (!opStatus || !MAP_VISIBLE_OPERATIONAL_STATUSES.includes(opStatus)) {
+    return null;
+  }
+
+  return {
+    service_id: active.service_id,
+    service_short: null,
+    status: opStatus,
+    dispatch_status: null,
+    mensajero_id: messenger.messenger_id,
+    assigned_messenger_id: messenger.messenger_id,
+    messenger_name: messenger.full_name ?? null,
+    origin: null,
+    destination: null,
+    operational_flags: null,
+  };
+}
+
+/**
+ * Unifica capas sin duplicar service_id.
+ * Prioridad en conflicto: active_services > requested_services > items[].active_service.
+ */
+export function mergeAdminOpsMapServices(
+  messengers: OpsMapMessenger[],
+  requestedRaw: unknown[] | undefined,
+  activeRaw: unknown[] | undefined,
+): {
+  map_services: OpsMapService[];
+  requested_services: OpsMapService[];
+  active_services: OpsMapService[];
+} {
+  const requested_services = normalizeMapServiceList(requestedRaw);
+  const active_services = normalizeMapServiceList(activeRaw ?? []);
+
+  const byId = new Map<string, OpsMapService>();
+
+  for (const messenger of messengers) {
+    const stub = normalizeMapServiceFromMessengerFallback(messenger);
+    if (stub) byId.set(stub.service_id, stub);
+  }
+
+  for (const service of requested_services) {
+    byId.set(service.service_id, service);
+  }
+
+  for (const service of active_services) {
+    byId.set(service.service_id, service);
+  }
+
+  return {
+    map_services: Array.from(byId.values()),
+    requested_services,
+    active_services,
   };
 }
 
@@ -254,19 +433,6 @@ function normalizeMessengersList(data: AdminOpsMapSnapshotResponse): OpsMapMesse
   const out: OpsMapMessenger[] = [];
   for (const item of raw) {
     const normalized = normalizeMessenger(item);
-    if (normalized) out.push(normalized);
-  }
-  return out;
-}
-
-function normalizeRequestedList(
-  data: AdminOpsMapSnapshotResponse,
-): RequestedOpsService[] {
-  const raw = data.requested_services ?? [];
-  if (!Array.isArray(raw)) return [];
-  const out: RequestedOpsService[] = [];
-  for (const item of raw) {
-    const normalized = normalizeRequestedService(item);
     if (normalized) out.push(normalized);
   }
   return out;
@@ -300,10 +466,27 @@ export async function getAdminOpsMapSnapshot(
     );
   }
 
+  const messengers = normalizeMessengersList(data);
+  const { map_services, requested_services, active_services } =
+    mergeAdminOpsMapServices(
+      messengers,
+      data.requested_services,
+      data.active_services ?? [],
+    );
+
   return {
     trace_id: data.trace_id,
     limit: data.limit ?? limit,
-    messengers: normalizeMessengersList(data),
-    requested_services: normalizeRequestedList(data),
+    messengers,
+    map_services,
+    requested_services,
+    active_services,
   };
+}
+
+export function serviceHasSlaBreach(service: OpsMapService): boolean {
+  const flags = service.operational_flags;
+  return (
+    flags?.sla_pickup_breach === true || flags?.sla_delivery_breach === true
+  );
 }

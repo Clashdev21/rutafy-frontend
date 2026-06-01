@@ -25,10 +25,10 @@ import {
   Building2,
   Home,
   LogOut,
-  Map,
   MapPin,
   Package,
   PanelLeft,
+  Radio,
   TriangleAlert,
   Truck,
   Users,
@@ -39,14 +39,14 @@ import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
 
 const menuItems = [
-  { icon: Home, label: "Dashboard", path: "/admin" },
-  { icon: Building2, label: "Empresas", path: "/admin/companies" },
-  { icon: Users, label: "Usuarios", path: "/admin/users" },
-  { icon: Truck, label: "Servicios", path: "/admin/services" },
-  { icon: MapPin, label: "Nodos", path: "/admin/nodes" },
+  { icon: Radio, label: "Operación en vivo", path: "/admin/ops/map" },
   { icon: TriangleAlert, label: "Alertas", path: "/admin/alerts" },
   { icon: Package, label: "Mensajeros", path: "/admin/mensajeros" },
-  { icon: Map, label: "Mapa ops", path: "/admin/ops/map" },
+  { icon: Truck, label: "Servicios", path: "/admin/services" },
+  { icon: MapPin, label: "Nodos logísticos", path: "/admin/nodes" },
+  { icon: Building2, label: "Transportistas", path: "/admin/companies" },
+  { icon: Users, label: "Usuarios", path: "/admin/users" },
+  { icon: Home, label: "Dashboard", path: "/admin" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "admin-sidebar-width";

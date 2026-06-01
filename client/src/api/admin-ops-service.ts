@@ -64,6 +64,7 @@ export type AdminOpsServiceDetail = {
   service_short?: string | null;
   status?: string | null;
   dispatch_status?: string | null;
+  geofence_state?: string | null;
   request_mode?: string | null;
   scheduled_for?: string | null;
   service_type?: string | null;
@@ -329,6 +330,7 @@ function normalizeServiceDetail(
     service_short: pick(service, "service_short", toOptionalString),
     status: pick(service, "status", toOptionalString),
     dispatch_status: pick(service, "dispatch_status", toOptionalString),
+    geofence_state: pick(service, "geofence_state", toOptionalString),
     request_mode: pick(service, "request_mode", toOptionalString),
     scheduled_for: pick(service, "scheduled_for", toOptionalString),
     service_type: pick(service, "service_type", toOptionalString),
