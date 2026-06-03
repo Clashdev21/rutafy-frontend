@@ -70,6 +70,12 @@ export const OPERATIONAL_STATUS_PIN_COLORS: Record<
   CLOSED: "#64748b",
 };
 
+/** Polyline de flujo operacional en mapa admin (servicio seleccionado). */
+export const OPERATIONAL_FLOW_POLYLINE_COLORS = {
+  CLAIMED: "#2563eb",
+  STARTED: "#16a34a",
+} as const;
+
 export type GeofenceState =
   | "FAR_PICKUP"
   | "NEAR_PICKUP"

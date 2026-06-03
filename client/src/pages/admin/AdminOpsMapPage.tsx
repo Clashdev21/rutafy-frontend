@@ -25,6 +25,7 @@ import {
   OPS_MAP_DEFAULT_ZOOM,
   OPS_MESSENGER_PIN_COLORS,
   OPS_MESSENGER_STATE_LABELS,
+  OPERATIONAL_FLOW_POLYLINE_COLORS,
   OPERATIONAL_STATUS_LABELS,
   OPERATIONAL_STATUS_PIN_COLORS,
   normalizeOperationalStatus,
@@ -202,6 +203,72 @@ function getServiceMarkerTitle(service: OpsMapService): string {
   if (originLabel) lines.push(`Origen: ${originLabel}`);
   if (destLabel) lines.push(`Destino: ${destLabel}`);
   return lines.join("\n");
+}
+
+function findMessengerForService(
+  service: OpsMapService,
+  messengers: OpsMapMessenger[],
+): OpsMapMessenger | null {
+  const id = String(
+    service.assigned_messenger_id ?? service.mensajero_id ?? "",
+  ).trim();
+  if (!id) return null;
+  return messengers.find((m) => m.messenger_id === id) ?? null;
+}
+
+function clearOperationalFlowOverlay(
+  polylineRef: React.MutableRefObject<google.maps.Polyline | null>,
+): void {
+  if (polylineRef.current) {
+    polylineRef.current.setMap(null);
+    polylineRef.current = null;
+  }
+}
+
+function syncOperationalFlowOverlay({
+  map,
+  service,
+  messengers,
+  polylineRef,
+}: {
+  map: google.maps.Map;
+  service: OpsMapService;
+  messengers: OpsMapMessenger[];
+  polylineRef: React.MutableRefObject<google.maps.Polyline | null>;
+}): void {
+  clearOperationalFlowOverlay(polylineRef);
+
+  const status = normalizeOperationalStatus(service.status);
+  const originPos = locationToPosition(service.origin);
+  const destinationPos = locationToPosition(service.destination);
+
+  let path: google.maps.LatLngLiteral[] | null = null;
+  let strokeColor: string | null = null;
+
+  if (status === "CLAIMED") {
+    const messenger = findMessengerForService(service, messengers);
+    const messengerPos = messenger ? getMessengerCoords(messenger) : null;
+    if (messengerPos && originPos) {
+      path = [messengerPos, originPos];
+      strokeColor = OPERATIONAL_FLOW_POLYLINE_COLORS.CLAIMED;
+    }
+  } else if (status === "STARTED" && originPos && destinationPos) {
+    path = [originPos, destinationPos];
+    strokeColor = OPERATIONAL_FLOW_POLYLINE_COLORS.STARTED;
+  }
+
+  if (!path || path.length < 2 || !strokeColor) return;
+
+  polylineRef.current = new google.maps.Polyline({
+    map,
+    path,
+    geodesic: true,
+    strokeColor,
+    strokeOpacity: 0.95,
+    strokeWeight: 5,
+    zIndex: 9997,
+    clickable: false,
+  });
 }
 
 function isGhostMessenger(m: OpsMapMessenger): boolean {
@@ -1605,6 +1672,7 @@ export default function AdminOpsMapPage() {
   const serviceHtmlOverlayRef = useRef<HTMLDivElement>(null);
   const serviceHtmlCleanupRef = useRef<(() => void) | null>(null);
   const serviceProjectionBridgeRef = useRef<google.maps.OverlayView | null>(null);
+  const operationalPolylineRef = useRef<google.maps.Polyline | null>(null);
   const didFitBoundsRef = useRef(false);
   const useAdvancedMarkersRef = useRef<boolean | null>(null);
   const rowRefsRef = useRef<Record<string, HTMLDivElement | null>>({});
@@ -1703,6 +1771,11 @@ export default function AdminOpsMapPage() {
     if (!selectedServiceId) return null;
     return mapServices.find((s) => s.service_id === selectedServiceId) ?? null;
   }, [mapServices, selectedServiceId]);
+
+  const operationalTarget = useMemo(() => {
+    if (!selectedService || serviceDetailOpen) return null;
+    return selectedService;
+  }, [selectedService, serviceDetailOpen]);
 
   const handleSelectMessenger = useCallback((id: string | null) => {
     setSelectedServiceId(null);
@@ -1868,7 +1941,28 @@ export default function AdminOpsMapPage() {
   }, [mapReady, serviceDetail]);
 
   useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+
+    clearOperationalFlowOverlay(operationalPolylineRef);
+
+    if (!operationalTarget) return;
+
+    syncOperationalFlowOverlay({
+      map,
+      service: operationalTarget,
+      messengers,
+      polylineRef: operationalPolylineRef,
+    });
+
     return () => {
+      clearOperationalFlowOverlay(operationalPolylineRef);
+    };
+  }, [mapReady, operationalTarget, messengers]);
+
+  useEffect(() => {
+    return () => {
+      clearOperationalFlowOverlay(operationalPolylineRef);
       clearAllServiceVisuals(
         serviceOverlayRef,
         servicePolylineRef,
@@ -2036,6 +2130,30 @@ export default function AdminOpsMapPage() {
                   </p>
                 </>
               ) : null}
+              <p className="font-semibold text-[#1E3A5F] mt-2 mb-0.5">
+                Flujo operacional
+              </p>
+              <div className="flex items-center gap-2">
+                <span
+                  className="h-1 w-6 shrink-0 rounded-full"
+                  style={{
+                    backgroundColor: OPERATIONAL_FLOW_POLYLINE_COLORS.CLAIMED,
+                  }}
+                />
+                <span className="text-gray-700">Mensajero → Recoger</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span
+                  className="h-1 w-6 shrink-0 rounded-full"
+                  style={{
+                    backgroundColor: OPERATIONAL_FLOW_POLYLINE_COLORS.STARTED,
+                  }}
+                />
+                <span className="text-gray-700">Recoger → Entregar</span>
+              </div>
+              <p className="text-[10px] text-gray-500 mt-0.5">
+                Solo con servicio seleccionado
+              </p>
             </div>
           </div>
 
