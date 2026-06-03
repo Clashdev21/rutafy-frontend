@@ -29,7 +29,7 @@ const roles = [
     icon: Shield,
     color: "bg-gray-700",
     barClass: "border-l-4 border-l-slate-600",
-    path: "/admin",
+    path: "/admin/login",
   },
 ];
 

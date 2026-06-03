@@ -1,3 +1,6 @@
+import { adminHttp, parseAdminApiError } from "@/api/adminHttp";
+import axios from "axios";
+
 export type DispatchAlertItem = {
   alert_id: string;
   service_id: string;
@@ -27,103 +30,68 @@ export type GetDispatchAlertsOptions = {
   limit?: number;
 };
 
-function getApiBase(): string {
+function ensureApiBase(): void {
   const base = import.meta.env.VITE_RUTAFY_API_BASE;
-  if (typeof base === "string" && base.trim()) {
-    return base.trim().replace(/\/$/, "");
-  }
-  return "";
-}
-
-function getAdminKey(): string {
-  const key = import.meta.env.VITE_RUTAFY_ADMIN_KEY;
-  return typeof key === "string" ? key.trim() : "";
-}
-
-function ensureAdminConfig(): { apiBase: string; adminKey: string } {
-  const apiBase = getApiBase();
-  const adminKey = getAdminKey();
-  if (!apiBase) {
+  if (typeof base !== "string" || !base.trim()) {
     throw new Error("VITE_RUTAFY_API_BASE no está configurado");
   }
-  if (!adminKey) {
-    throw new Error("VITE_RUTAFY_ADMIN_KEY no está configurado");
-  }
-  return { apiBase, adminKey };
-}
-
-function parseErrorMessage(
-  data: { error?: string; message?: string } | null,
-  fallback: string,
-): string {
-  return data?.error || data?.message || fallback;
 }
 
 export async function getDispatchAlerts(
   options?: GetDispatchAlertsOptions,
 ): Promise<DispatchAlertsResponse> {
-  const { apiBase, adminKey } = ensureAdminConfig();
+  ensureApiBase();
 
   const status = options?.status ?? "active";
   const limit = options?.limit ?? 50;
 
-  const url = new URL(`${apiBase}/v1/admin/dispatch-alerts`);
-  url.searchParams.set("status", status);
-  url.searchParams.set("limit", String(limit));
-
-  const response = await fetch(url.toString(), {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "x-admin-key": adminKey,
-    },
-  });
-
-  const data = (await response.json()) as DispatchAlertsResponse & {
-    error?: string;
-    message?: string;
-  };
-
-  if (!response.ok) {
-    throw new Error(
-      parseErrorMessage(data, `Error al cargar alertas (${response.status})`),
+  try {
+    const { data } = await adminHttp.get<DispatchAlertsResponse>(
+      "/v1/admin/dispatch-alerts",
+      { params: { status, limit } },
     );
+    return {
+      ...data,
+      items: Array.isArray(data.items) ? data.items : [],
+    };
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response) {
+      throw new Error(
+        parseAdminApiError(
+          err.response.data as { error?: string; message?: string },
+          `Error al cargar alertas (${err.response.status})`,
+        ),
+      );
+    }
+    throw err;
   }
-
-  return {
-    ...data,
-    items: Array.isArray(data.items) ? data.items : [],
-  };
 }
 
 export async function redispatchService(
   serviceId: string,
   note?: string,
 ): Promise<unknown> {
-  const { apiBase, adminKey } = ensureAdminConfig();
+  ensureApiBase();
   const id = serviceId.trim();
   if (!id) {
     throw new Error("service_id inválido");
   }
 
-  const url = `${apiBase}/v1/admin/services/${encodeURIComponent(id)}/redispatch`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-admin-key": adminKey,
-    },
-    body: JSON.stringify({ note: note ?? "" }),
-  });
-
-  const data = (await response.json()) as { error?: string; message?: string };
-
-  if (!response.ok) {
-    throw new Error(
-      parseErrorMessage(data, `Error en redispatch (${response.status})`),
+  try {
+    const { data } = await adminHttp.post(
+      `/v1/admin/services/${encodeURIComponent(id)}/redispatch`,
+      { note: note ?? "" },
     );
+    return data;
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response) {
+      throw new Error(
+        parseAdminApiError(
+          err.response.data as { error?: string; message?: string },
+          `Error en redispatch (${err.response.status})`,
+        ),
+      );
+    }
+    throw err;
   }
-
-  return data;
 }

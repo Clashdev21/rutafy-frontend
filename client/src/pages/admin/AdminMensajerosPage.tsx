@@ -4,7 +4,6 @@ import {
   updateAdminMessenger,
   type AdminMessenger,
 } from "@/api/admin-messengers";
-import AdminLayout from "@/components/AdminLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -317,7 +316,7 @@ export default function AdminMensajerosPage() {
   };
 
   return (
-    <AdminLayout>
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
@@ -715,6 +714,6 @@ export default function AdminMensajerosPage() {
           </DialogContent>
         </Dialog>
       </div>
-    </AdminLayout>
+    </>
   );
 }

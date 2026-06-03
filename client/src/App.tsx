@@ -22,15 +22,8 @@ import DriverService from "./pages/driver/DriverService";
 import DriverHistory from "./pages/driver/DriverHistory";
 import DriverProfile from "./pages/driver/DriverProfile";
 
-// Admin Pages
-import AdminDashboard from "./pages/admin/AdminDashboard";
-import AdminCompanies from "./pages/admin/AdminCompanies";
-import AdminUsers from "./pages/admin/AdminUsers";
-import AdminServicesPage from "./pages/admin/AdminServicesPage";
-import AdminNodes from "./pages/admin/AdminNodes";
-import AdminDispatchAlerts from "./pages/admin/AdminDispatchAlerts";
-import AdminMensajerosPage from "./pages/admin/AdminMensajerosPage";
-import AdminOpsMapPage from "./pages/admin/AdminOpsMapPage";
+import AdminLogin from "./pages/admin/AdminLogin";
+import { adminGuardedRouteEntries } from "./routes/AdminRoutes";
 
 function Router() {
   return (
@@ -52,14 +45,10 @@ function Router() {
       <Route path="/driver/history" component={DriverHistory} />
       <Route path="/driver/profile" component={DriverProfile} />
 
-      <Route path="/admin" component={AdminDashboard} />
-      <Route path="/admin/companies" component={AdminCompanies} />
-      <Route path="/admin/users" component={AdminUsers} />
-      <Route path="/admin/services" component={AdminServicesPage} />
-      <Route path="/admin/nodes" component={AdminNodes} />
-      <Route path="/admin/alerts" component={AdminDispatchAlerts} />
-      <Route path="/admin/mensajeros" component={AdminMensajerosPage} />
-      <Route path="/admin/ops/map" component={AdminOpsMapPage} />
+      <Route path="/admin/login" component={AdminLogin} />
+      {adminGuardedRouteEntries.map(({ path, component: Component }) => (
+        <Route key={path} path={path} component={Component} />
+      ))}
 
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

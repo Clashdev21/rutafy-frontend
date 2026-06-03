@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import AdminLayout from "@/components/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -356,7 +355,7 @@ export default function AdminNodes() {
   };
 
   return (
-    <AdminLayout>
+    <>
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-[#1E3A5F]">Nodos</h1>
@@ -692,6 +691,6 @@ export default function AdminNodes() {
           </CardContent>
         </Card>
       </div>
-    </AdminLayout>
+    </>
   );
 }

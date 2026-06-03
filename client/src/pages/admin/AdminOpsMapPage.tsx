@@ -11,7 +11,6 @@ import {
   type OpsServiceLocation,
   type OpsServiceTimelineEvent,
 } from "@/api/admin-ops-service";
-import AdminLayout from "@/components/AdminLayout";
 import { GeofenceBadge } from "@/components/admin/GeofenceBadge";
 import { MessengerOpsSummaryBar } from "@/components/admin/MessengerOpsSummaryBar";
 import { OpsIncidentsPanel } from "@/components/admin/OpsIncidentsPanel";
@@ -1996,7 +1995,7 @@ export default function AdminOpsMapPage() {
   const showFatalEmpty = isLoading && messengers.length === 0;
 
   return (
-    <AdminLayout>
+    <>
       <OpsServiceDetailDialog
         open={serviceDetailOpen}
         onOpenChange={handleServiceDetailOpenChange}
@@ -2345,6 +2344,6 @@ export default function AdminOpsMapPage() {
           </CardContent>
         </Card>
       </div>
-    </AdminLayout>
+    </>
   );
 }

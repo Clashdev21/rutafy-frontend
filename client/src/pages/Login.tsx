@@ -62,7 +62,7 @@ export default function Login() {
       toast.success("Inicio de sesión exitoso");
 
       if (normalized.appRole === "ADMIN") {
-        setLocation("/admin", { replace: true });
+        setLocation("/admin/login", { replace: true });
       } else if (normalized.appRole === "MENSAJERO") {
         setLocation("/mensajero", { replace: true });
       } else {

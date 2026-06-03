@@ -114,7 +114,7 @@ export default function RegisterTransportista() {
       toast.success("Cuenta creada correctamente");
 
       if (normalized.appRole === "ADMIN") {
-        setLocation("/admin", { replace: true });
+        setLocation("/admin/login", { replace: true });
       } else if (normalized.appRole === "MENSAJERO") {
         setLocation("/mensajero", { replace: true });
       } else {

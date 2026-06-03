@@ -1,4 +1,5 @@
 import type { OpsServiceLocation } from "@/api/admin-ops-service";
+import { adminHttp, parseAdminApiError } from "@/api/adminHttp";
 import {
   MAP_VISIBLE_OPERATIONAL_STATUSES,
   normalizeGeofenceState,
@@ -6,6 +7,7 @@ import {
   type GeofenceState,
   type OperationalStatus,
 } from "@/lib/adminOpsConstants";
+import axios from "axios";
 
 export type OpsMessengerState =
   | "AVAILABLE"
@@ -115,36 +117,11 @@ const OPS_STATES: OpsMessengerState[] = [
   "OFFLINE",
 ];
 
-function getApiBase(): string {
+function ensureApiBase(): void {
   const base = import.meta.env.VITE_RUTAFY_API_BASE;
-  if (typeof base === "string" && base.trim()) {
-    return base.trim().replace(/\/$/, "");
-  }
-  return "";
-}
-
-function getAdminKey(): string {
-  const key = import.meta.env.VITE_RUTAFY_ADMIN_KEY;
-  return typeof key === "string" ? key.trim() : "";
-}
-
-function ensureAdminConfig(): { apiBase: string; adminKey: string } {
-  const apiBase = getApiBase();
-  const adminKey = getAdminKey();
-  if (!apiBase) {
+  if (typeof base !== "string" || !base.trim()) {
     throw new Error("VITE_RUTAFY_API_BASE no está configurado");
   }
-  if (!adminKey) {
-    throw new Error("VITE_RUTAFY_ADMIN_KEY no está configurado");
-  }
-  return { apiBase, adminKey };
-}
-
-function parseErrorMessage(
-  data: { error?: string; message?: string } | null,
-  fallback: string,
-): string {
-  return data?.error || data?.message || fallback;
 }
 
 function toOptionalString(value: unknown): string | null {
@@ -441,29 +418,26 @@ function normalizeMessengersList(data: AdminOpsMapSnapshotResponse): OpsMapMesse
 export async function getAdminOpsMapSnapshot(
   options?: GetAdminOpsMapSnapshotOptions,
 ): Promise<AdminOpsMapSnapshot> {
-  const { apiBase, adminKey } = ensureAdminConfig();
+  ensureApiBase();
   const limit = options?.limit ?? 200;
 
-  const url = new URL(`${apiBase}/v1/admin/ops/map`);
-  url.searchParams.set("limit", String(limit));
-
-  const response = await fetch(url.toString(), {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "x-admin-key": adminKey,
-    },
-  });
-
-  const data = (await response.json()) as AdminOpsMapSnapshotResponse & {
-    error?: string;
-    message?: string;
-  };
-
-  if (!response.ok) {
-    throw new Error(
-      parseErrorMessage(data, `Error al cargar mapa ops (${response.status})`),
+  let data: AdminOpsMapSnapshotResponse;
+  try {
+    const response = await adminHttp.get<AdminOpsMapSnapshotResponse>(
+      "/v1/admin/ops/map",
+      { params: { limit } },
     );
+    data = response.data;
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response) {
+      throw new Error(
+        parseAdminApiError(
+          err.response.data as { error?: string; message?: string },
+          `Error al cargar mapa ops (${err.response.status})`,
+        ),
+      );
+    }
+    throw err;
   }
 
   const messengers = normalizeMessengersList(data);

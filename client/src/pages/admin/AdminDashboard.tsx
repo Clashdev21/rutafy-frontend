@@ -1,4 +1,3 @@
-import AdminLayout from "@/components/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
 import { Building2, Truck, Users, TrendingUp } from "lucide-react";
@@ -50,7 +49,7 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <AdminLayout>
+    <>
       <div className="space-y-6">
         {/* Header */}
         <div>
@@ -161,6 +160,6 @@ export default function AdminDashboard() {
           </Card>
         </div>
       </div>
-    </AdminLayout>
+    </>
   );
 }

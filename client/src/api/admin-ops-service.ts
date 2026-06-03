@@ -1,3 +1,6 @@
+import { adminHttp, parseAdminApiError } from "@/api/adminHttp";
+import axios from "axios";
+
 export type OpsServiceNode = {
   node_id?: string | null;
   code?: string | null;
@@ -79,36 +82,11 @@ export type AdminOpsServiceDetail = {
 
 type AdminOpsServiceDetailResponse = Record<string, unknown>;
 
-function getApiBase(): string {
+function ensureApiBase(): void {
   const base = import.meta.env.VITE_RUTAFY_API_BASE;
-  if (typeof base === "string" && base.trim()) {
-    return base.trim().replace(/\/$/, "");
-  }
-  return "";
-}
-
-function getAdminKey(): string {
-  const key = import.meta.env.VITE_RUTAFY_ADMIN_KEY;
-  return typeof key === "string" ? key.trim() : "";
-}
-
-function ensureAdminConfig(): { apiBase: string; adminKey: string } {
-  const apiBase = getApiBase();
-  const adminKey = getAdminKey();
-  if (!apiBase) {
+  if (typeof base !== "string" || !base.trim()) {
     throw new Error("VITE_RUTAFY_API_BASE no está configurado");
   }
-  if (!adminKey) {
-    throw new Error("VITE_RUTAFY_ADMIN_KEY no está configurado");
-  }
-  return { apiBase, adminKey };
-}
-
-function parseErrorMessage(
-  data: { error?: string; message?: string } | null,
-  fallback: string,
-): string {
-  return data?.error || data?.message || fallback;
 }
 
 function toFiniteNumber(value: unknown): number | null {
@@ -347,34 +325,28 @@ function normalizeServiceDetail(
 export async function getAdminOpsServiceDetail(
   serviceId: string,
 ): Promise<AdminOpsServiceDetail> {
-  const { apiBase, adminKey } = ensureAdminConfig();
+  ensureApiBase();
   const id = serviceId.trim();
   if (!id) {
     throw new Error("service_id inválido");
   }
 
-  const url = `${apiBase}/v1/admin/ops/services/${encodeURIComponent(id)}`;
-
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "x-admin-key": adminKey,
-    },
-  });
-
-  const data = (await response.json()) as AdminOpsServiceDetailResponse & {
-    error?: string;
-    message?: string;
-  };
-
-  if (!response.ok) {
-    throw new Error(
-      parseErrorMessage(
-        data,
-        `Error al cargar detalle del servicio (${response.status})`,
-      ),
+  let data: AdminOpsServiceDetailResponse;
+  try {
+    const response = await adminHttp.get<AdminOpsServiceDetailResponse>(
+      `/v1/admin/ops/services/${encodeURIComponent(id)}`,
     );
+    data = response.data;
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response) {
+      throw new Error(
+        parseAdminApiError(
+          err.response.data as { error?: string; message?: string },
+          `Error al cargar detalle del servicio (${err.response.status})`,
+        ),
+      );
+    }
+    throw err;
   }
 
   return normalizeServiceDetail(data, id);
