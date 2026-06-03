@@ -1,3 +1,5 @@
+import { adminHttp, parseAdminApiError } from "@/api/adminHttp";
+import axios from "axios";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -80,9 +82,6 @@ type DeleteNodeResponse = {
   error?: string;
 };
 
-const API_BASE =
-  (import.meta as any)?.env?.VITE_RUTAFY_API_BASE || "https://api.rutafy.app";
-
 const CATEGORY_OPTIONS: NodeCategory[] = [
   "PUERTO",
   "PATIO",
@@ -100,6 +99,20 @@ const CATEGORY_OPTIONS: NodeCategory[] = [
 
 function formatCategoryLabel(category: NodeCategory): string {
   return category.replaceAll("_", " ");
+}
+
+function nodeTraceId(prefix: string): string {
+  return `${prefix}-${Date.now()}`;
+}
+
+function parseNodesApiError(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err) && err.response) {
+    return parseAdminApiError(
+      err.response.data as { error?: string; message?: string },
+      `${fallback} (${err.response.status})`,
+    );
+  }
+  return err instanceof Error ? err.message : fallback;
 }
 
 export default function AdminNodes() {
@@ -132,21 +145,18 @@ export default function AdminNodes() {
   const loadNodes = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/v1/nodes`, {
-        headers: {
-          "Content-Type": "application/json",
+      const { data } = await adminHttp.get<NodesListResponse & { error?: string }>(
+        "/v1/nodes",
+        {
+          headers: { "x-trace-id": nodeTraceId("WEB-NODE-LIST") },
         },
-      });
-
-      const data = (await response.json()) as NodesListResponse & { error?: string };
-
-      if (!response.ok) {
-        throw new Error(data?.error || "No fue posible cargar nodos");
+      );
+      if (data?.error) {
+        throw new Error(data.error);
       }
-
       setNodes(data.nodes || []);
-    } catch (error: any) {
-      toast.error(error?.message || "No fue posible cargar nodos");
+    } catch (error: unknown) {
+      toast.error(parseNodesApiError(error, "No fue posible cargar nodos"));
     } finally {
       setIsLoading(false);
     }
@@ -202,23 +212,19 @@ export default function AdminNodes() {
       };
 
       const isEditing = Boolean(editingNodeId);
-      const url = isEditing
-        ? `${API_BASE}/v1/nodes/${editingNodeId}`
-        : `${API_BASE}/v1/nodes`;
+      const traceId = nodeTraceId(isEditing ? "WEB-NODE-EDIT" : "WEB-NODE");
+      const { data } = isEditing
+        ? await adminHttp.patch<NodeResponse>(
+            `/v1/nodes/${editingNodeId}`,
+            payload,
+            { headers: { "x-trace-id": traceId } },
+          )
+        : await adminHttp.post<NodeResponse>("/v1/nodes", payload, {
+            headers: { "x-trace-id": traceId },
+          });
 
-      const response = await fetch(url, {
-        method: isEditing ? "PATCH" : "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-trace-id": `WEB-NODE-${Date.now()}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const data = (await response.json()) as NodeResponse;
-
-      if (!response.ok) {
-        throw new Error(data?.error || "No fue posible guardar el nodo");
+      if (data?.error) {
+        throw new Error(data.error);
       }
 
       if (data.node) {
@@ -228,8 +234,8 @@ export default function AdminNodes() {
       setLastWarning(data.warning || null);
       toast.success(isEditing ? "Nodo actualizado correctamente" : "Nodo creado correctamente");
       resetForm();
-    } catch (error: any) {
-      toast.error(error?.message || "No fue posible guardar el nodo");
+    } catch (error: unknown) {
+      toast.error(parseNodesApiError(error, "No fue posible guardar el nodo"));
     } finally {
       setIsCreating(false);
     }
@@ -251,21 +257,16 @@ export default function AdminNodes() {
   const handleToggleActive = async (node: NodeItem) => {
     setBusyNodeId(node.node_id);
     try {
-      const response = await fetch(`${API_BASE}/v1/nodes/${node.node_id}/status`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "x-trace-id": `WEB-NODE-STATUS-${Date.now()}`,
+      const { data } = await adminHttp.patch<NodeResponse>(
+        `/v1/nodes/${node.node_id}/status`,
+        { is_active: !node.is_active },
+        {
+          headers: { "x-trace-id": nodeTraceId("WEB-NODE-STATUS") },
         },
-        body: JSON.stringify({
-          is_active: !node.is_active,
-        }),
-      });
+      );
 
-      const data = (await response.json()) as NodeResponse;
-
-      if (!response.ok) {
-        throw new Error(data?.error || "No fue posible cambiar el estado");
+      if (data?.error) {
+        throw new Error(data.error);
       }
 
       if (data.node) {
@@ -275,8 +276,8 @@ export default function AdminNodes() {
       toast.success(
         !node.is_active ? "Nodo activado correctamente" : "Nodo desactivado correctamente"
       );
-    } catch (error: any) {
-      toast.error(error?.message || "No fue posible cambiar el estado");
+    } catch (error: unknown) {
+      toast.error(parseNodesApiError(error, "No fue posible cambiar el estado"));
     } finally {
       setBusyNodeId(null);
     }
@@ -285,21 +286,16 @@ export default function AdminNodes() {
   const handleToggleMarketplace = async (node: NodeItem) => {
     setBusyNodeId(node.node_id);
     try {
-      const response = await fetch(`${API_BASE}/v1/nodes/${node.node_id}/marketplace`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "x-trace-id": `WEB-NODE-MARKET-${Date.now()}`,
+      const { data } = await adminHttp.patch<NodeResponse>(
+        `/v1/nodes/${node.node_id}/marketplace`,
+        { marketplace_enabled: !node.marketplace_enabled },
+        {
+          headers: { "x-trace-id": nodeTraceId("WEB-NODE-MARKET") },
         },
-        body: JSON.stringify({
-          marketplace_enabled: !node.marketplace_enabled,
-        }),
-      });
+      );
 
-      const data = (await response.json()) as NodeResponse;
-
-      if (!response.ok) {
-        throw new Error(data?.error || "No fue posible cambiar marketplace");
+      if (data?.error) {
+        throw new Error(data.error);
       }
 
       if (data.node) {
@@ -311,8 +307,8 @@ export default function AdminNodes() {
           ? "Nodo habilitado para marketplace"
           : "Nodo ocultado del marketplace"
       );
-    } catch (error: any) {
-      toast.error(error?.message || "No fue posible cambiar marketplace");
+    } catch (error: unknown) {
+      toast.error(parseNodesApiError(error, "No fue posible cambiar marketplace"));
     } finally {
       setBusyNodeId(null);
     }
@@ -328,18 +324,15 @@ export default function AdminNodes() {
     setBusyNodeId(node.node_id);
 
     try {
-      const response = await fetch(`${API_BASE}/v1/nodes/${node.node_id}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          "x-trace-id": `WEB-NODE-DELETE-${Date.now()}`,
+      const { data } = await adminHttp.delete<DeleteNodeResponse>(
+        `/v1/nodes/${node.node_id}`,
+        {
+          headers: { "x-trace-id": nodeTraceId("WEB-NODE-DELETE") },
         },
-      });
+      );
 
-      const data = (await response.json()) as DeleteNodeResponse;
-
-      if (!response.ok) {
-        throw new Error(data?.error || "No fue posible eliminar el nodo");
+      if (data?.error) {
+        throw new Error(data.error);
       }
 
       setNodes((prev) => prev.filter((item) => item.node_id !== node.node_id));
@@ -347,8 +340,8 @@ export default function AdminNodes() {
         resetForm();
       }
       toast.success("Nodo eliminado correctamente");
-    } catch (error: any) {
-      toast.error(error?.message || "No fue posible eliminar el nodo");
+    } catch (error: unknown) {
+      toast.error(parseNodesApiError(error, "No fue posible eliminar el nodo"));
     } finally {
       setBusyNodeId(null);
     }
@@ -539,7 +532,7 @@ export default function AdminNodes() {
               <div className="flex justify-between py-2">
                 <span className="text-gray-500">API base</span>
                 <span className="font-semibold text-xs text-right break-all max-w-[160px]">
-                  {API_BASE}
+                  {import.meta.env.VITE_RUTAFY_API_BASE || "—"}
                 </span>
               </div>
               <div className="pt-2">

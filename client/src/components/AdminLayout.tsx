@@ -44,7 +44,6 @@ const menuItems = [
   { icon: MapPin, label: "Nodos logísticos", path: "/admin/nodes" },
   { icon: Building2, label: "Transportistas", path: "/admin/companies" },
   { icon: Users, label: "Usuarios", path: "/admin/users" },
-  { icon: Home, label: "Dashboard", path: "/admin" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "admin-sidebar-width";

@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExternalLink, RefreshCw, RotateCcw, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -87,9 +88,11 @@ function getRedispatchTitle(item: DispatchAlertItem): string {
 function AlertRow({
   item,
   onRefresh,
+  onViewService,
 }: {
   item: DispatchAlertItem;
   onRefresh: () => void;
+  onViewService: (serviceId: string) => void;
 }) {
   const [isRedispatching, setIsRedispatching] = useState(false);
   const detectedLabel = formatMinutesAgo(item.detected_at);
@@ -98,10 +101,7 @@ function AlertRow({
   const redispatchEnabled = canRedispatch(item);
 
   const handleViewService = () => {
-    window.open(
-      `/admin/services?service_id=${encodeURIComponent(item.service_id)}`,
-      "_blank",
-    );
+    onViewService(item.service_id);
   };
 
   const handleRedispatch = async () => {
@@ -209,12 +209,24 @@ function AlertRow({
 }
 
 export default function AdminDispatchAlerts() {
+  const [, setLocation] = useLocation();
   const [items, setItems] = useState<DispatchAlertItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const loadInFlightRef = useRef(false);
+
+  const handleViewService = useCallback(
+    (serviceId: string) => {
+      const id = serviceId.trim();
+      if (!id) return;
+      setLocation(
+        `/admin/ops/map?service_id=${encodeURIComponent(id)}`,
+      );
+    },
+    [setLocation],
+  );
 
   const loadAlerts = useCallback(async (options?: { silent?: boolean }) => {
     if (loadInFlightRef.current) return;
@@ -326,6 +338,7 @@ export default function AdminDispatchAlerts() {
                     key={item.alert_id}
                     item={item}
                     onRefresh={() => void loadAlerts({ silent: true })}
+                    onViewService={handleViewService}
                   />
                 ))}
               </div>

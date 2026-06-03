@@ -43,8 +43,16 @@ import {
 import { cn } from "@/lib/utils";
 import { List, Package, RefreshCw, Wifi, WifiOff, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 const POLL_INTERVAL_MS = 30_000;
+
+function getOpsMapServiceIdFromSearch(): string | null {
+  if (typeof window === "undefined") return null;
+  const value = new URLSearchParams(window.location.search).get("service_id");
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
 
 const MAP_DEFAULT_CENTER = OPS_MAP_CENTER;
 const MAP_DEFAULT_ZOOM = OPS_MAP_DEFAULT_ZOOM;
@@ -1675,6 +1683,7 @@ export default function AdminOpsMapPage() {
   const didFitBoundsRef = useRef(false);
   const useAdvancedMarkersRef = useRef<boolean | null>(null);
   const rowRefsRef = useRef<Record<string, HTMLDivElement | null>>({});
+  const urlServiceIdHandledRef = useRef(false);
 
   const loadSnapshot = useCallback(async (options?: { silent?: boolean }) => {
     if (loadInFlightRef.current) return;
@@ -1868,10 +1877,31 @@ export default function AdminOpsMapPage() {
           ? e.message
           : "No fue posible cargar el detalle del servicio";
       setServiceDetailError(message);
+      toast.error(message);
     } finally {
       setServiceDetailLoading(false);
     }
   }, []);
+
+  const handleIncidentSelectService = useCallback(
+    (serviceId: string) => {
+      const id = serviceId.trim();
+      if (!id) return;
+      setSelectedMessengerId(null);
+      setSelectedServiceId(id);
+      void handleOpenServiceDetail(id);
+    },
+    [handleOpenServiceDetail],
+  );
+
+  useEffect(() => {
+    const id = getOpsMapServiceIdFromSearch();
+    if (!id || urlServiceIdHandledRef.current) return;
+    urlServiceIdHandledRef.current = true;
+    setSelectedMessengerId(null);
+    setSelectedServiceId(id);
+    void handleOpenServiceDetail(id);
+  }, [handleOpenServiceDetail]);
 
   const handleMapReady = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
@@ -2166,10 +2196,7 @@ export default function AdminOpsMapPage() {
             <OpsIncidentsPanel
               services={mapServices}
               messengers={messengers}
-              onSelectService={(id) => {
-                handleServiceClick(id);
-                void handleOpenServiceDetail(id);
-              }}
+              onSelectService={handleIncidentSelectService}
               onSelectMessenger={handleSelectMessenger}
             />
           </div>
@@ -2263,10 +2290,7 @@ export default function AdminOpsMapPage() {
           <OpsIncidentsPanel
             services={mapServices}
             messengers={messengers}
-            onSelectService={(id) => {
-              handleServiceClick(id);
-              void handleOpenServiceDetail(id);
-            }}
+            onSelectService={handleIncidentSelectService}
             onSelectMessenger={handleSelectMessenger}
           />
         </div>

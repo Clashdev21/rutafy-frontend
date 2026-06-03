@@ -239,7 +239,7 @@ export default function AdminMensajerosPage() {
   const openEdit = (m: AdminMessenger) => {
     setEditing(m);
     setEditForm({
-      full_name: m.full_name,
+      full_name: m.full_name?.trim() ?? "",
       is_active: m.is_active,
       doc_type: m.doc_type?.trim() ?? "",
       doc_number: m.doc_number?.trim() ?? "",

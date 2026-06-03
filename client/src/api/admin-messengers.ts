@@ -54,6 +54,25 @@ function ensureApiBase(): void {
   }
 }
 
+function trimOptionalString(
+  value: string | undefined | null,
+): string | undefined {
+  if (value == null) return undefined;
+  const s = String(value).trim();
+  return s.length > 0 ? s : undefined;
+}
+
+function requireTrimmedString(
+  value: string | undefined | null,
+  fieldLabel: string,
+): string {
+  const trimmed = trimOptionalString(value);
+  if (!trimmed) {
+    throw new Error(`${fieldLabel} es requerido`);
+  }
+  return trimmed;
+}
+
 function normalizeMessengersList(
   data: AdminMessengersListResponse,
 ): AdminMessenger[] {
@@ -129,14 +148,26 @@ export async function updateAdminMessenger(
   }
 
   const body: Record<string, string | boolean> = {};
-  if (payload.full_name !== undefined) body.full_name = payload.full_name.trim();
-  if (payload.is_active !== undefined) body.is_active = payload.is_active;
-  if (payload.doc_type !== undefined) body.doc_type = payload.doc_type.trim();
-  if (payload.doc_number !== undefined) body.doc_number = payload.doc_number.trim();
-  if (payload.vehicle_type !== undefined) {
-    body.vehicle_type = payload.vehicle_type.trim();
+  if (payload.full_name !== undefined) {
+    body.full_name = requireTrimmedString(payload.full_name, "Nombre");
   }
-  if (payload.plate !== undefined) body.plate = payload.plate.trim();
+  if (payload.is_active !== undefined) body.is_active = payload.is_active;
+  if (payload.doc_type !== undefined) {
+    const docType = trimOptionalString(payload.doc_type);
+    if (docType !== undefined) body.doc_type = docType;
+  }
+  if (payload.doc_number !== undefined) {
+    const docNumber = trimOptionalString(payload.doc_number);
+    if (docNumber !== undefined) body.doc_number = docNumber;
+  }
+  if (payload.vehicle_type !== undefined) {
+    const vehicleType = trimOptionalString(payload.vehicle_type);
+    if (vehicleType !== undefined) body.vehicle_type = vehicleType;
+  }
+  if (payload.plate !== undefined) {
+    const plate = trimOptionalString(payload.plate);
+    if (plate !== undefined) body.plate = plate;
+  }
 
   try {
     const { data } = await adminHttp.patch(
