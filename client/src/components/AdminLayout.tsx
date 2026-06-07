@@ -29,6 +29,7 @@ import {
   Package,
   PanelLeft,
   Radio,
+  Route,
   TriangleAlert,
   Truck,
   Users,
@@ -38,6 +39,7 @@ import { useLocation } from "wouter";
 
 const menuItems = [
   { icon: Radio, label: "Operación en vivo", path: "/admin/ops/map" },
+  { icon: Route, label: "Trazabilidad", path: "/admin/tracking" },
   { icon: TriangleAlert, label: "Alertas", path: "/admin/alerts" },
   { icon: Package, label: "Mensajeros", path: "/admin/mensajeros" },
   { icon: Truck, label: "Servicios", path: "/admin/services" },
