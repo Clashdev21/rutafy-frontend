@@ -69,6 +69,13 @@ export function formatPercent(value?: number | null): string {
   return `${rounded}%`;
 }
 
+/** Cobertura GPS con un decimal: 6.21 → 6.2% */
+export function formatCoveragePct(value?: number | null): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const rounded = Math.round(value * 10) / 10;
+  return `${rounded}%`;
+}
+
 export function formatPointCount(count?: number | null): string {
   if (count == null || !Number.isFinite(count)) return "—";
   return String(Math.round(count));

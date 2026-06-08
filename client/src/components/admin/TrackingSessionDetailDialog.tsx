@@ -1,4 +1,8 @@
 import type { AdminTrackingSessionDetail } from "@/api/tracking-sessions";
+import {
+  TrackingCaptureQualityAlert,
+  TrackingCaptureQualityHero,
+} from "@/components/admin/TrackingCaptureQualityBanner";
 import { TrackingSessionStatsGrid } from "@/components/admin/TrackingSessionStatsGrid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -165,9 +169,11 @@ export function TrackingSessionDetailDialog({
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               <p className="text-xs font-semibold text-[#1E3A5F]">Métricas de captura</p>
+              <TrackingCaptureQualityHero stats={stats} />
               <TrackingSessionStatsGrid stats={stats} />
+              <TrackingCaptureQualityAlert stats={stats} />
             </div>
 
             <div className="space-y-2">

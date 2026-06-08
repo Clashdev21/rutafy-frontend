@@ -2,6 +2,7 @@ import type { AdminTrackingSessionStats } from "@/api/tracking-sessions";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   formatAccuracyMeters,
+  formatCoveragePct,
   formatDurationSeconds,
   formatPercent,
   formatPointCount,
@@ -13,6 +14,7 @@ import {
   Gauge,
   MapPin,
   PauseCircle,
+  Radar,
   Target,
   Timer,
 } from "lucide-react";
@@ -30,6 +32,16 @@ function buildStatItems(stats: AdminTrackingSessionStats): StatItem[] {
       label: "Duración total",
       value: formatDurationSeconds(stats.duration_seconds),
       icon: Clock,
+    },
+    {
+      label: "Cobertura GPS",
+      value: formatCoveragePct(stats.coverage_pct),
+      icon: Radar,
+    },
+    {
+      label: "Tiempo cubierto",
+      value: formatDurationSeconds(stats.covered_seconds),
+      icon: Timer,
     },
     {
       label: "Puntos capturados",

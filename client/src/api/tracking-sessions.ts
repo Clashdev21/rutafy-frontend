@@ -26,6 +26,9 @@ export type AdminTrackingSessionStats = {
   pct_accuracy_over_50m?: number | null;
   gap_count_over_60s?: number | null;
   max_gap_seconds?: number | null;
+  covered_seconds?: number | null;
+  coverage_pct?: number | null;
+  capture_quality?: string | null;
 };
 
 export type AdminTrackingSessionDetail = {
@@ -111,6 +114,9 @@ function normalizeStats(raw: unknown): AdminTrackingSessionStats {
     pct_accuracy_over_50m: pick(rec, "pct_accuracy_over_50m", toFiniteNumber),
     gap_count_over_60s: pick(rec, "gap_count_over_60s", toFiniteNumber),
     max_gap_seconds: pick(rec, "max_gap_seconds", toFiniteNumber),
+    covered_seconds: pick(rec, "covered_seconds", toFiniteNumber),
+    coverage_pct: pick(rec, "coverage_pct", toFiniteNumber),
+    capture_quality: pick(rec, "capture_quality", toOptionalString),
   };
 }
 
