@@ -16,6 +16,7 @@ export type AdminTrackingSession = {
   consent_at?: string | null;
   point_count?: number | null;
   duration_seconds?: number | null;
+  capture_quality?: string | null;
 };
 
 export type AdminTrackingSessionStats = {
@@ -79,6 +80,18 @@ function pick<T>(
   return read(rec[snake] ?? rec[camel]);
 }
 
+function pickCaptureQualityFromSession(rec: Record<string, unknown>): string | null {
+  const fromRoot = pick(rec, "capture_quality", toOptionalString);
+  if (fromRoot) return fromRoot;
+
+  const statsRaw = rec.stats ?? rec.Stats;
+  if (statsRaw && typeof statsRaw === "object" && !Array.isArray(statsRaw)) {
+    return pick(statsRaw as Record<string, unknown>, "capture_quality", toOptionalString);
+  }
+
+  return null;
+}
+
 function normalizeSession(raw: unknown): AdminTrackingSession | null {
   if (!raw || typeof raw !== "object") return null;
   const rec = raw as Record<string, unknown>;
@@ -100,6 +113,7 @@ function normalizeSession(raw: unknown): AdminTrackingSession | null {
     consent_at: pick(rec, "consent_at", toOptionalString),
     point_count: pick(rec, "point_count", toFiniteNumber),
     duration_seconds: pick(rec, "duration_seconds", toFiniteNumber),
+    capture_quality: pickCaptureQualityFromSession(rec),
   };
 }
 

@@ -117,6 +117,22 @@ export function captureQualityHeroClass(tier: CaptureQualityTier | null): string
   }
 }
 
+export function captureQualityBadgeClass(value?: string | null): string {
+  const tier = normalizeCaptureQuality(value);
+  switch (tier) {
+    case "excellent":
+      return "bg-emerald-100 text-emerald-800 border-emerald-200";
+    case "good":
+      return "bg-amber-100 text-amber-800 border-amber-200";
+    case "partial":
+      return "bg-orange-100 text-orange-800 border-orange-200";
+    case "incomplete":
+      return "bg-red-100 text-red-800 border-red-200";
+    default:
+      return "bg-gray-100 text-gray-700 border-gray-200";
+  }
+}
+
 export function captureQualityTextClass(tier: CaptureQualityTier | null): string {
   switch (tier) {
     case "excellent":

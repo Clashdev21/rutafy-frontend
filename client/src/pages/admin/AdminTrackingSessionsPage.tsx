@@ -17,6 +17,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  captureQualityBadgeClass,
+  captureQualityDisplay,
   trackingActorTypeLabel,
   trackingPurposeLabel,
   trackingStatusBadgeClass,
@@ -160,6 +162,7 @@ export default function AdminTrackingSessionsPage() {
                     <TableHead>Inicio</TableHead>
                     <TableHead className="text-right">Duración</TableHead>
                     <TableHead className="text-right">Puntos</TableHead>
+                    <TableHead>Calidad</TableHead>
                     <TableHead>Último heartbeat</TableHead>
                     <TableHead className="text-right">Acción</TableHead>
                   </TableRow>
@@ -201,6 +204,18 @@ export default function AdminTrackingSessionsPage() {
                       </TableCell>
                       <TableCell className="text-right text-sm tabular-nums text-gray-700">
                         {formatPointCount(session.point_count)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {session.capture_quality?.trim() ? (
+                          <Badge
+                            variant="outline"
+                            className={`text-xs ${captureQualityBadgeClass(session.capture_quality)}`}
+                          >
+                            {captureQualityDisplay(session.capture_quality)}
+                          </Badge>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-xs text-gray-600 whitespace-nowrap">
                         <span className="block tabular-nums">
