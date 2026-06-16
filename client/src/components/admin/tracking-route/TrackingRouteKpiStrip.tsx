@@ -10,8 +10,10 @@ import {
   formatDurationSeconds,
   formatPointCount,
 } from "@/lib/trackingSessionFormatters";
+import { countVisualSegments } from "@/lib/trackingRouteVisualSegments";
 import {
   Clock,
+  Layers,
   MapPin,
   PauseCircle,
   Radar,
@@ -68,6 +70,11 @@ export function TrackingRouteKpiStrip({ detail, route }: Props) {
       icon: Route,
     },
     {
+      label: "Tramos visuales",
+      value: formatPointCount(countVisualSegments(route)),
+      icon: Layers,
+    },
+    {
       label: "Gap máximo",
       value: formatDurationSeconds(
         quality?.max_gap_seconds ?? stats.max_gap_seconds,
@@ -82,7 +89,7 @@ export function TrackingRouteKpiStrip({ detail, route }: Props) {
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
       {items.map((item) => (
         <Card key={item.label} className="border-gray-100 shadow-none">
           <CardContent className="p-2.5 space-y-0.5">

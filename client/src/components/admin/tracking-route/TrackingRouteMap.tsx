@@ -3,6 +3,7 @@
 import type { AdminTrackingSessionRoute, TrackingRouteBounds } from "@/api/tracking-sessions";
 import { MapView } from "@/components/Map";
 import { Button } from "@/components/ui/button";
+import { buildVisualSegments } from "@/lib/trackingRouteVisualSegments";
 import { cn } from "@/lib/utils";
 import { Crosshair } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -123,7 +124,11 @@ function RouteMapLegend() {
           style={{ backgroundColor: COLOR_COVERED }}
           aria-hidden
         />
-        <span>GPS capturado</span>
+        <span>Línea continua: recorrido GPS consolidado</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="inline-block h-0.5 w-6 border-t-2 border-dashed border-amber-400" aria-hidden />
+        <span>Gap &gt; 5 min: interrupción relevante</span>
       </div>
       <div className="flex items-center gap-2">
         <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#16a34a] text-[9px] font-bold text-white">
@@ -137,9 +142,6 @@ function RouteMapLegend() {
         </span>
         <span>Fin GPS</span>
       </div>
-      <p className="text-[10px] text-slate-500 pt-0.5">
-        Gap = interrupción entre tramos (sin línea)
-      </p>
     </div>
   );
 }
@@ -164,9 +166,11 @@ export function TrackingRouteMap({ route, className }: Props) {
     markersRef.current = [];
 
     try {
-      for (const segment of route.segments) {
-        if (segment.points.length < 2) continue;
-        const path = segment.points.map((p) => ({ lat: p.lat, lng: p.lng }));
+      const visualSegments = buildVisualSegments(route);
+
+      for (const visual of visualSegments) {
+        if (visual.points.length < 2) continue;
+        const path = visual.points.map((p) => ({ lat: p.lat, lng: p.lng }));
         const polyline = new window.google!.maps!.Polyline({
           map,
           path,
