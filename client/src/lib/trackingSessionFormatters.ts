@@ -80,3 +80,9 @@ export function formatPointCount(count?: number | null): string {
   if (count == null || !Number.isFinite(count)) return "—";
   return String(Math.round(count));
 }
+
+export function formatDistanceKm(km?: number | null): string {
+  if (km == null || !Number.isFinite(km)) return "—";
+  const rounded = Math.round(km * 100) / 100;
+  return `${rounded} km`;
+}

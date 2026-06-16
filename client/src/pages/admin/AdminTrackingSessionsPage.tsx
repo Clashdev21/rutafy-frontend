@@ -30,13 +30,15 @@ import {
   formatPointCount,
   formatTrackingDateTime,
 } from "@/lib/trackingSessionFormatters";
-import { Eye, RefreshCw, Route } from "lucide-react";
+import { Eye, Map, RefreshCw, Route } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 const LIST_LIMIT = 50;
 
 export default function AdminTrackingSessionsPage() {
+  const [, setLocation] = useLocation();
   const [sessions, setSessions] = useState<AdminTrackingSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -226,16 +228,30 @@ export default function AdminTrackingSessionsPage() {
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 text-xs gap-1"
-                          onClick={() => void openDetail(session.id)}
-                        >
-                          <Eye className="h-3.5 w-3.5" aria-hidden />
-                          Ver resumen
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-xs gap-1"
+                            onClick={() => void openDetail(session.id)}
+                          >
+                            <Eye className="h-3.5 w-3.5" aria-hidden />
+                            Ver resumen
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-xs gap-1 text-[#2A9D8F]"
+                            onClick={() =>
+                              setLocation(`/admin/tracking/${encodeURIComponent(session.id)}`)
+                            }
+                          >
+                            <Map className="h-3.5 w-3.5" aria-hidden />
+                            Vista completa
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
