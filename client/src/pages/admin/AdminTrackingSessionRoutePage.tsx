@@ -9,6 +9,7 @@ import {
   TrackingCaptureQualityAlert,
   TrackingCaptureQualityHero,
 } from "@/components/admin/TrackingCaptureQualityBanner";
+import { TrackingObservedDistanceAlert } from "@/components/admin/tracking-route/TrackingObservedDistanceAlert";
 import { TrackingRouteHeader } from "@/components/admin/tracking-route/TrackingRouteHeader";
 import { TrackingRouteKpiStrip } from "@/components/admin/tracking-route/TrackingRouteKpiStrip";
 import { TrackingRouteMap } from "@/components/admin/tracking-route/TrackingRouteMap";
@@ -142,6 +143,7 @@ export default function AdminTrackingSessionRoutePage() {
 
       {heroStats ? <TrackingCaptureQualityHero stats={heroStats} /> : null}
       {heroStats ? <TrackingCaptureQualityAlert stats={heroStats} /> : null}
+      {heroStats ? <TrackingObservedDistanceAlert stats={heroStats} /> : null}
 
       {route?.route_meta.truncated ? (
         <Badge variant="outline" className="text-xs bg-amber-50 text-amber-800 border-amber-200">
