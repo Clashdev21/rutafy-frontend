@@ -41,6 +41,10 @@ GPS mensajero → heartbeat → geofence backend → geofence.updated → overla
 | Archivo | Contenido |
 |---------|-----------|
 | [frontend-architecture.md](./frontend-architecture.md) | Stack, rutas, hooks, polling vs WS |
+| [operational-interface.md](./operational-interface.md) | **Transportista y mensajero** — flujos, hooks, mapas, tracking |
+| [admin-ops.md](../admin-ops.md) | **Operación en vivo** — capas, SLA, ETA, geofence, paneles |
+| [admin-tracking.md](../admin-tracking.md) | **Trazabilidad GPS** — sesiones, mapa, timeline, KPIs, calidad |
+| [admin-panel.md](./admin-panel.md) | **Panel admin** — ops map, trazabilidad, auth, API |
 | [ui-operational-states.md](./ui-operational-states.md) | Estados mensajero/transportista, copy, componentes |
 | [realtime-ui.md](./realtime-ui.md) | WS, geofence overlay, reconnect, limpieza |
 | [maps-and-tracking.md](./maps-and-tracking.md) | `MessengerRouteMap`, GPS, Maps/Waze, ETA estático |
@@ -70,10 +74,10 @@ Referencias de código habituales:
 
 ## Audiencias de la app (rutas)
 
-| Ruta | Panel | Rol |
-|------|-------|-----|
-| `/mensajero` | `MensajeroPanel` | Mensajero en campo |
-| `/transportista` | `TransportistaPanel` | Solicitante / transportista |
-| `/admin/*` | Vistas admin | Operaciones / soporte |
+| Ruta | Panel | Rol | Documentación |
+|------|-------|-----|---------------|
+| `/mensajero` | `MensajeroPanel` | Mensajero en campo | [operational-interface.md](./operational-interface.md) |
+| `/transportista` | `TransportistaPanel` | Solicitante / transportista | [operational-interface.md](./operational-interface.md) |
+| `/admin/*` | Vistas admin | Operaciones / soporte | [admin-panel.md](./admin-panel.md) |
 
 Legacy `/client` y `/driver` existen pero no son el foco operativo actual.
