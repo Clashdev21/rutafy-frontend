@@ -3,6 +3,7 @@ import AdminCompanies from "@/pages/admin/AdminCompanies";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import AdminDispatchAlerts from "@/pages/admin/AdminDispatchAlerts";
 import AdminMensajerosPage from "@/pages/admin/AdminMensajerosPage";
+import AdminNotificationsPage from "@/pages/admin/AdminNotificationsPage";
 import AdminNodes from "@/pages/admin/AdminNodes";
 import AdminOpsMapPage from "@/pages/admin/AdminOpsMapPage";
 import AdminServicesPage from "@/pages/admin/AdminServicesPage";
@@ -31,6 +32,7 @@ const GuardedMensajeros = withAdminGuard(AdminMensajerosPage);
 const GuardedOpsMap = withAdminGuard(AdminOpsMapPage);
 const GuardedTracking = withAdminGuard(AdminTrackingSessionsPage);
 const GuardedTrackingRoute = withAdminGuard(AdminTrackingSessionRoutePage);
+const GuardedNotifications = withAdminGuard(AdminNotificationsPage);
 
 /** Rutas admin protegidas (login en App.tsx como /admin/login). */
 export const adminGuardedRouteEntries = [
@@ -43,5 +45,6 @@ export const adminGuardedRouteEntries = [
   { path: "/admin/mensajeros", component: GuardedMensajeros },
   { path: "/admin/tracking/:sessionId", component: GuardedTrackingRoute },
   { path: "/admin/tracking", component: GuardedTracking },
+  { path: "/admin/notifications", component: GuardedNotifications },
   { path: "/admin/ops/map", component: GuardedOpsMap },
 ] as const;
