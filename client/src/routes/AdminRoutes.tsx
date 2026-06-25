@@ -7,6 +7,7 @@ import AdminNotificationsPage from "@/pages/admin/AdminNotificationsPage";
 import AdminNodes from "@/pages/admin/AdminNodes";
 import AdminOpsMapPage from "@/pages/admin/AdminOpsMapPage";
 import AdminServicesPage from "@/pages/admin/AdminServicesPage";
+import AdminTrackingAlertsPage from "@/pages/admin/AdminTrackingAlertsPage";
 import AdminTrackingSessionRoutePage from "@/pages/admin/AdminTrackingSessionRoutePage";
 import AdminTrackingSessionsPage from "@/pages/admin/AdminTrackingSessionsPage";
 import AdminUsers from "@/pages/admin/AdminUsers";
@@ -31,6 +32,7 @@ const GuardedAlerts = withAdminGuard(AdminDispatchAlerts);
 const GuardedMensajeros = withAdminGuard(AdminMensajerosPage);
 const GuardedOpsMap = withAdminGuard(AdminOpsMapPage);
 const GuardedTracking = withAdminGuard(AdminTrackingSessionsPage);
+const GuardedTrackingAlerts = withAdminGuard(AdminTrackingAlertsPage);
 const GuardedTrackingRoute = withAdminGuard(AdminTrackingSessionRoutePage);
 const GuardedNotifications = withAdminGuard(AdminNotificationsPage);
 
@@ -43,6 +45,7 @@ export const adminGuardedRouteEntries = [
   { path: "/admin/nodes", component: GuardedNodes },
   { path: "/admin/alerts", component: GuardedAlerts },
   { path: "/admin/mensajeros", component: GuardedMensajeros },
+  { path: "/admin/tracking-alerts", component: GuardedTrackingAlerts },
   { path: "/admin/tracking/:sessionId", component: GuardedTrackingRoute },
   { path: "/admin/tracking", component: GuardedTracking },
   { path: "/admin/notifications", component: GuardedNotifications },
