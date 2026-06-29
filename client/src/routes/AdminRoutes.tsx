@@ -1,5 +1,5 @@
 import AdminProtectedRoute from "@/components/AdminProtectedRoute";
-import AdminCompanies from "@/pages/admin/AdminCompanies";
+import AdminOperationalTransportersPage from "@/pages/admin/AdminOperationalTransportersPage";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import AdminDispatchAlerts from "@/pages/admin/AdminDispatchAlerts";
 import AdminMensajerosPage from "@/pages/admin/AdminMensajerosPage";
@@ -26,7 +26,7 @@ function withAdminGuard<P extends object>(Component: ComponentType<P>) {
 
 const GuardedDashboard = withAdminGuard(AdminDashboard);
 const GuardedOperationalControl = withAdminGuard(AdminOperationalControlPage);
-const GuardedCompanies = withAdminGuard(AdminCompanies);
+const GuardedCompanies = withAdminGuard(AdminOperationalTransportersPage);
 const GuardedUsers = withAdminGuard(AdminUsers);
 const GuardedServices = withAdminGuard(AdminServicesPage);
 const GuardedNodes = withAdminGuard(AdminNodes);

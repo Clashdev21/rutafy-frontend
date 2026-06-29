@@ -50,7 +50,7 @@ const menuItems = [
   { icon: Package, label: "Mensajeros", path: "/admin/mensajeros" },
   { icon: Truck, label: "Servicios", path: "/admin/services" },
   { icon: MapPin, label: "Nodos logísticos", path: "/admin/nodes" },
-  { icon: Building2, label: "Transportistas", path: "/admin/companies" },
+  { icon: Building2, label: "Transportistas operativos", path: "/admin/companies" },
   { icon: Users, label: "Usuarios", path: "/admin/users" },
 ];
 

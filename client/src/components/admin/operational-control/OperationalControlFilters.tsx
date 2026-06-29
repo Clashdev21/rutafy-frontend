@@ -1,6 +1,5 @@
 import type { OperationalControlFilterOptions } from "@/api/operational-control";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -18,7 +17,6 @@ export type OperationalControlFiltersState = {
   port: string;
   driver: string;
   plate: string;
-  container: string;
   date: string;
 };
 
@@ -29,7 +27,6 @@ export const EMPTY_OPERATIONAL_FILTERS: OperationalControlFiltersState = {
   port: "all",
   driver: "all",
   plate: "all",
-  container: "",
   date: "",
 };
 
@@ -39,37 +36,6 @@ type Props = {
   onChange: (next: OperationalControlFiltersState) => void;
   onClear: () => void;
 };
-
-function SelectFilter({
-  label,
-  value,
-  options,
-  onValueChange,
-}: {
-  label: string;
-  value: string;
-  options: string[];
-  onValueChange: (v: string) => void;
-}) {
-  return (
-    <div className="space-y-1">
-      <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">{label}</p>
-      <Select value={value || "all"} onValueChange={onValueChange}>
-        <SelectTrigger className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Todos</SelectItem>
-          {options.map((opt) => (
-            <SelectItem key={opt} value={opt}>
-              {opt}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
 
 export function OperationalControlFilters({
   filters,
@@ -88,75 +54,73 @@ export function OperationalControlFilters({
     filters.port !== "all" ||
     filters.driver !== "all" ||
     filters.plate !== "all" ||
-    Boolean(filters.container.trim()) ||
     Boolean(filters.date.trim());
 
+  const compactSelect = (
+    label: string,
+    value: string,
+    opts: string[],
+    onValueChange: (v: string) => void,
+  ) => (
+    <div className="space-y-1 min-w-[130px] flex-1">
+      <p className="text-[10px] font-medium text-gray-500 uppercase">{label}</p>
+      <Select value={value || "all"} onValueChange={onValueChange}>
+        <SelectTrigger className="h-9 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Todos</SelectItem>
+          {opts.map((opt) => (
+            <SelectItem key={opt} value={opt}>
+              {opt}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+
   return (
-    <Card className="border-0 shadow-sm">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base text-[#1E3A5F]">Filtros</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <SelectFilter
-            label="Cliente"
-            value={filters.client}
-            options={options?.clients ?? []}
-            onValueChange={(v) => onChange({ ...filters, client: v })}
+    <div className="rounded-xl border border-gray-100 bg-white/80 p-3 space-y-3">
+      <div className="flex flex-wrap gap-2 items-end">
+        {compactSelect("Cliente", filters.client, options?.clients ?? [], (v) =>
+          onChange({ ...filters, client: v }),
+        )}
+        {compactSelect("Programa", filters.program, options?.programs ?? [], (v) =>
+          onChange({ ...filters, program: v }),
+        )}
+        {compactSelect("Estado", filters.status, statusOptions, (v) =>
+          onChange({ ...filters, status: v }),
+        )}
+        {compactSelect("Puerto", filters.port, options?.ports ?? [], (v) =>
+          onChange({ ...filters, port: v }),
+        )}
+        {compactSelect("Conductor", filters.driver, options?.drivers ?? [], (v) =>
+          onChange({ ...filters, driver: v }),
+        )}
+        {compactSelect("Placa", filters.plate, options?.plates ?? [], (v) =>
+          onChange({ ...filters, plate: v }),
+        )}
+        <div className="space-y-1 min-w-[130px]">
+          <p className="text-[10px] font-medium text-gray-500 uppercase">Fecha</p>
+          <Input
+            type="date"
+            className="h-9 text-xs"
+            value={filters.date}
+            onChange={(e) => onChange({ ...filters, date: e.target.value })}
           />
-          <SelectFilter
-            label="Programa"
-            value={filters.program}
-            options={options?.programs ?? []}
-            onValueChange={(v) => onChange({ ...filters, program: v })}
-          />
-          <SelectFilter
-            label="Estado"
-            value={filters.status}
-            options={statusOptions}
-            onValueChange={(v) => onChange({ ...filters, status: v })}
-          />
-          <SelectFilter
-            label="Puerto"
-            value={filters.port}
-            options={options?.ports ?? []}
-            onValueChange={(v) => onChange({ ...filters, port: v })}
-          />
-          <SelectFilter
-            label="Conductor"
-            value={filters.driver}
-            options={options?.drivers ?? []}
-            onValueChange={(v) => onChange({ ...filters, driver: v })}
-          />
-          <SelectFilter
-            label="Placa"
-            value={filters.plate}
-            options={options?.plates ?? []}
-            onValueChange={(v) => onChange({ ...filters, plate: v })}
-          />
-          <div className="space-y-1">
-            <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">
-              Contenedor
-            </p>
-            <Input
-              value={filters.container}
-              onChange={(e) => onChange({ ...filters, container: e.target.value })}
-              placeholder="Buscar contenedor…"
-            />
-          </div>
-          <div className="space-y-1">
-            <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Fecha</p>
-            <Input
-              type="date"
-              value={filters.date}
-              onChange={(e) => onChange({ ...filters, date: e.target.value })}
-            />
-          </div>
         </div>
-        <Button type="button" variant="ghost" disabled={!hasActive} onClick={onClear}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-9"
+          disabled={!hasActive}
+          onClick={onClear}
+        >
           Limpiar filtros
         </Button>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

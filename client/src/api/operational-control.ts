@@ -39,6 +39,10 @@ export type OperationalControlContainerRow = {
   last_updated_at?: string | null;
   history_count?: number | null;
   sort_priority?: string | null;
+  risk_band?: string | null;
+  driver_doc_id?: string | null;
+  delay_label?: string | null;
+  observed_delay?: string | null;
   alerts: string[];
 };
 
@@ -68,6 +72,8 @@ export type OperationalControlDeclaredTruth = {
   scheduled_time?: string | null;
   declared_destination?: string | null;
   original_email?: string | null;
+  driver_name?: string | null;
+  driver_plate?: string | null;
 };
 
 export type OperationalControlObservedTruth = {
@@ -78,6 +84,10 @@ export type OperationalControlObservedTruth = {
   compliance?: string | null;
   delay_minutes?: number | null;
   delay_label?: string | null;
+  driver_name?: string | null;
+  driver_plate?: string | null;
+  gps_status?: string | null;
+  movement_status?: string | null;
 };
 
 export type OperationalControlDriverInfo = {
@@ -85,6 +95,7 @@ export type OperationalControlDriverInfo = {
   plate?: string | null;
   assignment_state?: string | null;
   phone?: string | null;
+  doc_id?: string | null;
 };
 
 export type OperationalControlTimelineEvent = {
@@ -308,6 +319,13 @@ function normalizeContainerRow(raw: unknown): OperationalControlContainerRow | n
     history_count: pick(rec, "history_count", toFiniteNumber),
     sort_priority:
       pick(rec, "sort_priority", toOptionalString) ?? pick(rec, "priority_band", toOptionalString),
+    risk_band: pick(rec, "risk_band", toOptionalString),
+    driver_doc_id:
+      pick(rec, "driver_doc_id", toOptionalString) ??
+      pick(rec, "driver_document", toOptionalString) ??
+      pick(rec, "cedula", toOptionalString),
+    delay_label: pick(rec, "delay_label", toOptionalString),
+    observed_delay: pick(rec, "observed_delay", toOptionalString),
     alerts: normalizeAlerts(rec.alerts),
   };
 }
@@ -421,6 +439,8 @@ function normalizeDeclaredTruth(raw: unknown): OperationalControlDeclaredTruth {
       pick(rec, "scheduled_time", toOptionalString) ?? pick(rec, "scheduled_at", toOptionalString),
     declared_destination: pick(rec, "declared_destination", toOptionalString),
     original_email: pick(rec, "original_email", toOptionalString),
+    driver_name: pick(rec, "driver_name", toOptionalString),
+    driver_plate: pick(rec, "driver_plate", toOptionalString) ?? pick(rec, "plate", toOptionalString),
   };
 }
 
@@ -435,6 +455,10 @@ function normalizeObservedTruth(raw: unknown): OperationalControlObservedTruth {
     compliance: pick(rec, "compliance", toOptionalString),
     delay_minutes: pick(rec, "delay_minutes", toFiniteNumber),
     delay_label: pick(rec, "delay_label", toOptionalString) ?? pick(rec, "delay", toOptionalString),
+    driver_name: pick(rec, "driver_name", toOptionalString),
+    driver_plate: pick(rec, "driver_plate", toOptionalString) ?? pick(rec, "plate", toOptionalString),
+    gps_status: pick(rec, "gps_status", toOptionalString),
+    movement_status: pick(rec, "movement_status", toOptionalString),
   };
 }
 
@@ -446,6 +470,10 @@ function normalizeDriver(raw: unknown): OperationalControlDriverInfo {
     plate: pick(rec, "plate", toOptionalString),
     assignment_state: pick(rec, "assignment_state", toOptionalString) ?? pick(rec, "driver_assignment_state", toOptionalString),
     phone: pick(rec, "phone", toOptionalString),
+    doc_id:
+      pick(rec, "doc_id", toOptionalString) ??
+      pick(rec, "driver_doc_id", toOptionalString) ??
+      pick(rec, "cedula", toOptionalString),
   };
 }
 

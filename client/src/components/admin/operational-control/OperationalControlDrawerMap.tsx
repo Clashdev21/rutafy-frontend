@@ -158,8 +158,8 @@ export function OperationalControlDrawerMap({ map, className }: Props) {
   }
 
   return (
-    <MapView
-      className={cn("h-56 rounded-lg border border-slate-200 overflow-hidden", className)}
+      <MapView
+        className={cn("h-80 rounded-lg border border-slate-200 overflow-hidden", className)}
       initialCenter={DEFAULT_CENTER}
       initialZoom={12}
       onMapReady={handleMapReady}
