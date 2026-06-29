@@ -2037,11 +2037,14 @@ export default function AdminOpsMapPage() {
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-2xl font-bold text-[#1E3A5F]">
-              Operación en vivo
+              Centro de Mensajería
             </h1>
             <p className="text-gray-500 mt-1">
-              Centro de control · {requestedServices.length} solicitados ·{" "}
-              {activeServices.length} activos (CLAIMED/STARTED)
+              Monitoreo de servicios documentales, mensajeros, recogidas y entregas.
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              {requestedServices.length} solicitados · {activeServices.length} activos
+              (CLAIMED/STARTED)
             </p>
             {lastUpdatedAt ? (
               <p className="text-xs text-gray-400 mt-1">

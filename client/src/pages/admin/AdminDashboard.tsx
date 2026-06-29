@@ -53,8 +53,8 @@ export default function AdminDashboard() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-[#1E3A5F]">Dashboard</h1>
-          <p className="text-gray-500 mt-1">Resumen general del sistema</p>
+          <h1 className="text-2xl font-bold text-[#1E3A5F]">Indicadores</h1>
+          <p className="text-gray-500 mt-1 text-sm">Resumen general de mensajería y administración.</p>
         </div>
 
         {/* Stats Grid */}

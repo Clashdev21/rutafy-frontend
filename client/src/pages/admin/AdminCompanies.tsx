@@ -120,7 +120,10 @@ export default function AdminCompanies() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-[#1E3A5F]">Empresas</h1>
+            <h1 className="text-2xl font-bold text-[#1E3A5F]">Clientes / Empresas</h1>
+            <p className="text-gray-500 mt-1 text-sm">
+              Empresas clientes y configuración de cuentas en el sistema.
+            </p>
             <p className="text-gray-500 mt-1">Gestiona las empresas registradas</p>
           </div>
           <Button

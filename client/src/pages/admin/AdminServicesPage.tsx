@@ -173,7 +173,9 @@ export default function AdminServicesPage() {
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-2xl font-bold text-[#1E3A5F]">Servicios</h1>
-            <p className="text-gray-500 mt-1">Gestiona los servicios del sistema</p>
+            <p className="text-gray-500 mt-1 text-sm">
+              Servicios documentales: recogida, entrega, evidencia y estado del servicio.
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <Select value={statusFilter} onValueChange={setStatusFilter}>

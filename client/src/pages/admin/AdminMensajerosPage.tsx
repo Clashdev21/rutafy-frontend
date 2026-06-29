@@ -321,8 +321,8 @@ export default function AdminMensajerosPage() {
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-2xl font-bold text-[#1E3A5F]">Mensajeros</h1>
-            <p className="text-gray-500 mt-1">
-              Gestión operativa (API Rutafy)
+            <p className="text-gray-500 mt-1 text-sm">
+              Personal que recoge y entrega documentos.
             </p>
           </div>
           <Button

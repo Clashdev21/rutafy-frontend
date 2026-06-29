@@ -87,9 +87,11 @@ export default function AdminOperationalTransportersPage() {
         <div>
           <h1 className="text-2xl font-bold text-[#1E3A5F] flex items-center gap-2">
             <Truck className="h-6 w-6 shrink-0 text-[#2A9D8F]" aria-hidden />
-            Transportistas Operativos
+            Transportistas
           </h1>
-          <p className="text-gray-500 mt-1 text-sm">Flota, conductores y disponibilidad en operación.</p>
+          <p className="text-gray-500 mt-1 text-sm">
+            Flota Portex: conductores, vehículos y disponibilidad en operación de contenedores.
+          </p>
           {lastUpdatedAt ? (
             <p className="text-xs text-gray-400 mt-1">
               Última actualización:{" "}

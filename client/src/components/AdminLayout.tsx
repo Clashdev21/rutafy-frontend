@@ -11,6 +11,9 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
@@ -21,38 +24,95 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
+import type { LucideIcon } from "lucide-react";
 import {
+  BarChart3,
   Bell,
+  BellRing,
   Building2,
+  ClipboardCheck,
+  ClipboardList,
   Home,
+  Inbox,
   LayoutDashboard,
   LogOut,
   MapPin,
+  MapPinned,
   Package,
   PanelLeft,
   Radio,
-  Route,
-  ShieldAlert,
-  TriangleAlert,
+  Satellite,
   Truck,
   Users,
 } from "lucide-react";
-import { CSSProperties, useEffect, useRef, useState } from "react";
+import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 
-const menuItems = [
-  { icon: LayoutDashboard, label: "Centro Operacional", path: "/admin/operational-control" },
-  { icon: Radio, label: "Operación en vivo", path: "/admin/ops/map" },
-  { icon: Route, label: "Trazabilidad", path: "/admin/tracking" },
-  { icon: ShieldAlert, label: "Calidad GPS", path: "/admin/tracking-alerts" },
-  { icon: Bell, label: "Notificaciones", path: "/admin/notifications" },
-  { icon: TriangleAlert, label: "Alertas", path: "/admin/alerts" },
-  { icon: Package, label: "Mensajeros", path: "/admin/mensajeros" },
-  { icon: Truck, label: "Servicios", path: "/admin/services" },
-  { icon: MapPin, label: "Nodos logísticos", path: "/admin/nodes" },
-  { icon: Building2, label: "Transportistas operativos", path: "/admin/companies" },
-  { icon: Users, label: "Usuarios", path: "/admin/users" },
+type AdminMenuItem = {
+  icon: LucideIcon;
+  label: string;
+  path: string;
+};
+
+type AdminMenuSection = {
+  title: string;
+  items: AdminMenuItem[];
+};
+
+const menuSections: AdminMenuSection[] = [
+  {
+    title: "RUTAFY MENSAJERÍA",
+    items: [
+      { icon: Radio, label: "Centro de Mensajería", path: "/admin/ops/map" },
+      { icon: Package, label: "Mensajeros", path: "/admin/mensajeros" },
+      { icon: ClipboardList, label: "Servicios", path: "/admin/services" },
+      { icon: MapPinned, label: "Trazabilidad", path: "/admin/tracking" },
+      { icon: Satellite, label: "Calidad GPS", path: "/admin/tracking-alerts" },
+    ],
+  },
+  {
+    title: "PORTEX CONTENEDORES",
+    items: [
+      { icon: LayoutDashboard, label: "Torre de Control", path: "/admin/operational-control" },
+      { icon: Truck, label: "Transportistas", path: "/admin/companies" },
+      { icon: Inbox, label: "Declaraciones", path: "/admin/declarations" },
+      { icon: ClipboardCheck, label: "Revisión manual", path: "/admin/manual-review" },
+      { icon: BellRing, label: "Alertas", path: "/admin/alerts" },
+    ],
+  },
+  {
+    title: "ADMINISTRACIÓN",
+    items: [
+      { icon: BarChart3, label: "Indicadores", path: "/admin/dashboard" },
+      { icon: MapPin, label: "Nodos logísticos", path: "/admin/nodes" },
+      { icon: Users, label: "Usuarios", path: "/admin/users" },
+      { icon: Building2, label: "Clientes / Empresas", path: "/admin/clients" },
+      { icon: Bell, label: "Notificaciones", path: "/admin/notifications" },
+    ],
+  },
 ];
+
+const flatMenuItems = menuSections.flatMap((section) => section.items);
+
+function isMenuItemActive(path: string, location: string): boolean {
+  if (location === path) return true;
+  if (
+    path === "/admin/operational-control" &&
+    (location === "/admin" || location === "/admin/operational-control")
+  ) {
+    return true;
+  }
+  if (
+    path === "/admin/ops/map" &&
+    (location === "/admin/ops/map" || location === "/admin/live-operations")
+  ) {
+    return true;
+  }
+  if (path === "/admin/tracking" && location.startsWith("/admin/tracking")) {
+    return true;
+  }
+  return false;
+}
 
 const SIDEBAR_WIDTH_KEY = "admin-sidebar-width";
 const DEFAULT_WIDTH = 260;
@@ -117,8 +177,12 @@ function AdminLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeMenuItem = menuItems.find((item) => item.path === location);
   const isMobile = useIsMobile();
+
+  const activeMenuItem = useMemo(
+    () => flatMenuItems.find((item) => isMenuItemActive(item.path, location)),
+    [location],
+  );
 
   useEffect(() => {
     if (isCollapsed) {
@@ -186,29 +250,38 @@ function AdminLayoutContent({
             </div>
           </SidebarHeader>
 
-          <SidebarContent className="gap-0 bg-[#1E3A5F]">
-            <SidebarMenu className="px-2 py-1">
-              {menuItems.map((item) => {
-                const isActive = location === item.path;
-                return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => setLocation(item.path)}
-                      tooltip={item.label}
-                      className={`h-10 font-normal text-white/80 transition-all hover:bg-white/10 hover:text-white ${
-                        isActive ? "bg-[#36f532]/20 text-[#36f532]" : ""
-                      }`}
-                    >
-                      <item.icon
-                        className={`h-4 w-4 ${isActive ? "text-[#36f532]" : ""}`}
-                      />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
+          <SidebarContent className="gap-2 bg-[#1E3A5F]">
+            {menuSections.map((section) => (
+              <SidebarGroup key={section.title} className="px-2 py-0">
+                <SidebarGroupLabel className="px-2 text-[10px] font-semibold tracking-wider text-white/40 uppercase group-data-[collapsible=icon]:hidden">
+                  {section.title}
+                </SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu className="py-0">
+                    {section.items.map((item) => {
+                      const isActive = isMenuItemActive(item.path, location);
+                      return (
+                        <SidebarMenuItem key={item.path}>
+                          <SidebarMenuButton
+                            isActive={isActive}
+                            onClick={() => setLocation(item.path)}
+                            tooltip={item.label}
+                            className={`h-10 font-normal text-white/80 transition-all hover:bg-white/10 hover:text-white ${
+                              isActive ? "bg-[#36f532]/20 text-[#36f532]" : ""
+                            }`}
+                          >
+                            <item.icon
+                              className={`h-4 w-4 ${isActive ? "text-[#36f532]" : ""}`}
+                            />
+                            <span>{item.label}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            ))}
           </SidebarContent>
 
           <SidebarFooter className="bg-[#1E3A5F] p-3">

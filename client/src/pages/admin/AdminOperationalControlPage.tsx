@@ -93,7 +93,7 @@ export default function AdminOperationalControlPage() {
             Torre de Control
           </h1>
           <p className="text-gray-500 mt-1 text-sm">
-            El contenedor es la unidad de seguimiento. Riesgo primero, detalle después.
+            Seguimiento operacional de contenedores, Digital Twin, riesgo y ETA.
           </p>
           {lastUpdatedAt ? (
             <p className="text-xs text-gray-400 mt-1">
