@@ -5,6 +5,7 @@ import AdminDispatchAlerts from "@/pages/admin/AdminDispatchAlerts";
 import AdminMensajerosPage from "@/pages/admin/AdminMensajerosPage";
 import AdminNotificationsPage from "@/pages/admin/AdminNotificationsPage";
 import AdminNodes from "@/pages/admin/AdminNodes";
+import AdminOperationalControlPage from "@/pages/admin/AdminOperationalControlPage";
 import AdminOpsMapPage from "@/pages/admin/AdminOpsMapPage";
 import AdminServicesPage from "@/pages/admin/AdminServicesPage";
 import AdminTrackingAlertsPage from "@/pages/admin/AdminTrackingAlertsPage";
@@ -24,6 +25,7 @@ function withAdminGuard<P extends object>(Component: ComponentType<P>) {
 }
 
 const GuardedDashboard = withAdminGuard(AdminDashboard);
+const GuardedOperationalControl = withAdminGuard(AdminOperationalControlPage);
 const GuardedCompanies = withAdminGuard(AdminCompanies);
 const GuardedUsers = withAdminGuard(AdminUsers);
 const GuardedServices = withAdminGuard(AdminServicesPage);
@@ -38,7 +40,9 @@ const GuardedNotifications = withAdminGuard(AdminNotificationsPage);
 
 /** Rutas admin protegidas (login en App.tsx como /admin/login). */
 export const adminGuardedRouteEntries = [
-  { path: "/admin", component: GuardedDashboard },
+  { path: "/admin", component: GuardedOperationalControl },
+  { path: "/admin/operational-control", component: GuardedOperationalControl },
+  { path: "/admin/dashboard", component: GuardedDashboard },
   { path: "/admin/companies", component: GuardedCompanies },
   { path: "/admin/users", component: GuardedUsers },
   { path: "/admin/services", component: GuardedServices },

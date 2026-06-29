@@ -25,6 +25,7 @@ import {
   Bell,
   Building2,
   Home,
+  LayoutDashboard,
   LogOut,
   MapPin,
   Package,
@@ -40,6 +41,7 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 
 const menuItems = [
+  { icon: LayoutDashboard, label: "Centro Operacional", path: "/admin/operational-control" },
   { icon: Radio, label: "Operación en vivo", path: "/admin/ops/map" },
   { icon: Route, label: "Trazabilidad", path: "/admin/tracking" },
   { icon: ShieldAlert, label: "Calidad GPS", path: "/admin/tracking-alerts" },
