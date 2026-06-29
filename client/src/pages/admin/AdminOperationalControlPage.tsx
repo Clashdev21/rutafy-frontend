@@ -1,31 +1,27 @@
 import { OperationalControlCommandSearch } from "@/components/admin/operational-control/OperationalControlCommandSearch";
-import { OperationalControlContainerTable } from "@/components/admin/operational-control/OperationalControlContainerTable";
-import { OperationalControlCriticalStrip } from "@/components/admin/operational-control/OperationalControlCriticalStrip";
 import { OperationalControlDrawer } from "@/components/admin/operational-control/OperationalControlDrawer";
 import {
   EMPTY_OPERATIONAL_FILTERS,
   OperationalControlFilters,
   type OperationalControlFiltersState,
 } from "@/components/admin/operational-control/OperationalControlFilters";
-import { OperationalControlKpiStrip } from "@/components/admin/operational-control/OperationalControlKpiStrip";
 import { OperationalControlQuickTabs } from "@/components/admin/operational-control/OperationalControlQuickTabs";
+import { OperationalLiveContainerTable } from "@/components/admin/operational-twin/OperationalLiveContainerTable";
+import { OperationalTowerKpiStrip } from "@/components/admin/operational-twin/OperationalTowerKpiStrip";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { useOperationalControl } from "@/hooks/useOperationalControl";
+import { useOperationalTwinTower } from "@/hooks/useOperationalTwinTower";
 import type { OperationalControlContainerRow } from "@/api/operational-control";
-import {
-  clientFilterContainers,
-  sortOperationalContainers,
-} from "@/lib/operationalControlConstants";
+import { clientFilterContainers } from "@/lib/operationalControlConstants";
 import {
   countByQuickTab,
   filterByQuickTab,
   matchesCommandSearch,
-  pickCriticalContainers,
-  type QuickTab,
 } from "@/lib/operationalControlUx";
+import type { ContainerLiveState } from "@/lib/operationalTwinUx";
 import { AlertTriangle, LayoutDashboard, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
+import type { QuickTab } from "@/lib/operationalControlUx";
 
 export default function AdminOperationalControlPage() {
   const [filters, setFilters] = useState<OperationalControlFiltersState>(
@@ -50,8 +46,6 @@ export default function AdminOperationalControlPage() {
   );
 
   const {
-    counts,
-    kpis,
     containers,
     filterOptions,
     isLoading,
@@ -59,26 +53,39 @@ export default function AdminOperationalControlPage() {
     error,
     lastUpdatedAt,
     refresh,
-  } = useOperationalControl(apiParams);
+    liveStates,
+    towerKpis,
+  } = useOperationalTwinTower(apiParams);
 
-  const baseRows = useMemo(() => {
-    const filtered = clientFilterContainers(containers, filters);
-    const searched = filtered.filter((row) => matchesCommandSearch(row, searchQuery));
-    return sortOperationalContainers(searched);
-  }, [containers, filters, searchQuery]);
+  const filteredStates = useMemo(() => {
+    const filteredRows = clientFilterContainers(containers, filters);
+    const allowed = new Set(filteredRows.map((r) => r.container_id));
+    const searched = liveStates.filter((s) => {
+      if (!allowed.has(s.container_id)) return false;
+      return matchesCommandSearch(s.row, searchQuery);
+    });
+    const tabIds = new Set(
+      filterByQuickTab(
+        searched.map((s) => s.row),
+        quickTab,
+      ).map((r) => r.container_id),
+    );
+    return searched.filter((s) => tabIds.has(s.container_id));
+  }, [liveStates, containers, filters, searchQuery, quickTab]);
 
-  const tabCounts = useMemo(() => countByQuickTab(baseRows), [baseRows]);
-  const displayRows = useMemo(
-    () => filterByQuickTab(baseRows, quickTab),
-    [baseRows, quickTab],
-  );
-  const criticalRows = useMemo(
-    () => pickCriticalContainers(sortOperationalContainers(containers)),
-    [containers],
-  );
+  const tabBaseRows = useMemo(() => {
+    const filteredRows = clientFilterContainers(containers, filters);
+    const allowed = new Set(filteredRows.map((r) => r.container_id));
+    return liveStates
+      .filter((s) => allowed.has(s.container_id))
+      .filter((s) => matchesCommandSearch(s.row, searchQuery))
+      .map((s) => s.row);
+  }, [liveStates, containers, filters, searchQuery]);
 
-  const openDrawer = (row: OperationalControlContainerRow) => {
-    setSelectedRow(row);
+  const tabCounts = useMemo(() => countByQuickTab(tabBaseRows), [tabBaseRows]);
+
+  const openDrawer = (state: ContainerLiveState) => {
+    setSelectedRow(state.row);
     setDrawerOpen(true);
   };
 
@@ -125,7 +132,10 @@ export default function AdminOperationalControlPage() {
         rows={containers}
         query={searchQuery}
         onQueryChange={setSearchQuery}
-        onSelect={openDrawer}
+        onSelect={(row) => {
+          setSelectedRow(row);
+          setDrawerOpen(true);
+        }}
       />
 
       {showInitialLoading ? (
@@ -146,7 +156,7 @@ export default function AdminOperationalControlPage() {
             </div>
           ) : null}
 
-          <OperationalControlKpiStrip counts={counts} kpis={kpis} />
+          <OperationalTowerKpiStrip kpis={towerKpis} />
 
           <OperationalControlFilters
             filters={filters}
@@ -154,8 +164,6 @@ export default function AdminOperationalControlPage() {
             onChange={setFilters}
             onClear={() => setFilters(EMPTY_OPERATIONAL_FILTERS)}
           />
-
-          <OperationalControlCriticalStrip rows={criticalRows} onSelect={openDrawer} />
 
           <OperationalControlQuickTabs
             active={quickTab}
@@ -165,19 +173,18 @@ export default function AdminOperationalControlPage() {
 
           <Card className="border-0 shadow-sm">
             <CardContent className="p-0 sm:p-4 pt-4">
-              {isLoading && displayRows.length === 0 ? (
+              {isLoading && filteredStates.length === 0 ? (
                 <p className="text-sm text-gray-500 py-8 text-center px-4">
                   Cargando contenedores…
                 </p>
-              ) : displayRows.length === 0 ? (
+              ) : filteredStates.length === 0 ? (
                 <p className="text-sm text-gray-400 py-8 text-center px-4">
                   No hay contenedores con los filtros actuales.
                 </p>
               ) : (
-                <OperationalControlContainerTable
-                  rows={displayRows}
-                  onSelectRow={openDrawer}
-                  onViewDetail={openDrawer}
+                <OperationalLiveContainerTable
+                  states={filteredStates}
+                  onSelect={openDrawer}
                 />
               )}
             </CardContent>

@@ -9,6 +9,12 @@ import {
   resolveOperationalStateLabel,
   resolvePortDisplay,
 } from "@/lib/operationalControlDisplay";
+import {
+  buildContainerLiveState,
+  type JourneyPhaseUi,
+  type RiskPresentation,
+  type RouteNodeUi,
+} from "@/lib/operationalTwinUx";
 
 export type OperationalDrawerSource = "digital_twin" | "legacy" | "row_fallback";
 
@@ -56,6 +62,14 @@ export type OperationalDrawerViewModel = {
   alerts: string[];
   map: OperationalControlMapData;
   history: Array<{ title: string; at?: string | null; status?: string | null }>;
+  corridor_name?: string | null;
+  current_node_label?: string | null;
+  next_node_label?: string | null;
+  minutes_to_next?: string | null;
+  route_nodes: RouteNodeUi[];
+  journey_phases: JourneyPhaseUi[];
+  risk_presentation: RiskPresentation;
+  eta_source: "ia" | "gps" | "programacion";
 };
 
 function mergeRowBasics(
@@ -101,6 +115,7 @@ export function buildDrawerViewFromDigitalTwin(
   twin: OperationalDigitalTwin,
   row?: OperationalControlContainerRow | null,
 ): OperationalDrawerViewModel {
+  const live = row ? buildContainerLiveState(row, twin) : null;
   const vm: OperationalDrawerViewModel = {
     source: "digital_twin",
     container_id: twin.container_id,
@@ -136,8 +151,24 @@ export function buildDrawerViewFromDigitalTwin(
     ],
     map: twin.map,
     history: [],
+    corridor_name: twin.corridor_name ?? live?.corridorName,
+    current_node_label: live?.currentNodeName ?? twin.current_node_label,
+    next_node_label: live?.nextNodeName ?? twin.next_node_label,
+    minutes_to_next: live?.minutesToNext ?? null,
+    route_nodes: live?.routeNodes ?? [],
+    journey_phases: live?.journeyPhases ?? [],
+    risk_presentation: live?.risk ?? resolveRiskPresentationFromRow(row, twin),
+    eta_source: live?.etaSource ?? "ia",
   };
   return mergeRowBasics(vm, row);
+}
+
+function resolveRiskPresentationFromRow(
+  row?: OperationalControlContainerRow | null,
+  twin?: OperationalDigitalTwin | null,
+) {
+  if (row) return buildContainerLiveState(row, twin ?? null).risk;
+  return { band: "normal" as const, emoji: "🟢", label: "Normal", reasons: [] };
 }
 
 export function buildDrawerViewFromLegacyDetail(
@@ -206,6 +237,16 @@ export function buildDrawerViewFromLegacyDetail(
     alerts: row?.alerts ?? [],
     map: detail.map,
     history: detail.history,
+    corridor_name: null,
+    current_node_label: null,
+    next_node_label: null,
+    minutes_to_next: null,
+    route_nodes: row ? buildContainerLiveState(row, null).routeNodes : [],
+    journey_phases: row ? buildContainerLiveState(row, null).journeyPhases : [],
+    risk_presentation: row
+      ? buildContainerLiveState(row, null).risk
+      : { band: "normal", emoji: "🟢", label: "Normal", reasons: [] },
+    eta_source: "programacion",
   };
   return mergeRowBasics(vm, row);
 }
@@ -215,6 +256,7 @@ export function buildDrawerViewFromRow(
 ): OperationalDrawerViewModel {
   const port = resolvePortDisplay(row);
   const destination = resolveDestinationLabel(row);
+  const liveFallback = buildContainerLiveState(row, null);
   return {
     source: "row_fallback",
     container_id: row.container_id,
@@ -248,6 +290,14 @@ export function buildDrawerViewFromRow(
     alerts: row.alerts,
     map: { polyline: [] },
     history: [],
+    corridor_name: null,
+    current_node_label: liveFallback.currentNodeName,
+    next_node_label: liveFallback.nextNodeName,
+    minutes_to_next: liveFallback.minutesToNext,
+    route_nodes: liveFallback.routeNodes,
+    journey_phases: liveFallback.journeyPhases,
+    risk_presentation: liveFallback.risk,
+    eta_source: liveFallback.etaSource,
   };
 }
 

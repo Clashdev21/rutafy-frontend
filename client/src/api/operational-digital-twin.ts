@@ -34,6 +34,23 @@ export type OperationalDigitalTwinJourneyProgress = {
 export type OperationalDigitalTwinNextStep = {
   key?: string | null;
   label?: string | null;
+  eta?: string | null;
+  minutes?: number | null;
+};
+
+export type OperationalJourneyPhase = {
+  key: string;
+  label: string;
+  completed?: boolean;
+  current?: boolean;
+};
+
+export type OperationalRouteNode = {
+  code?: string | null;
+  name?: string | null;
+  label?: string | null;
+  is_current?: boolean;
+  is_destination?: boolean;
 };
 
 export type OperationalDigitalTwinRisk = {
@@ -78,6 +95,13 @@ export type OperationalDigitalTwin = {
   map: OperationalControlMapData;
   gps_status?: string | null;
   gps_last_seen_at?: string | null;
+  current_node_label?: string | null;
+  next_node_label?: string | null;
+  minutes_to_next?: number | null;
+  corridor_name?: string | null;
+  route_nodes?: OperationalRouteNode[];
+  journey_phases?: OperationalJourneyPhase[];
+  heartbeat_at?: string | null;
 };
 
 export type OperationalDigitalTwinListParams = {
@@ -253,6 +277,45 @@ function normalizeInferredTruth(raw: unknown): OperationalDigitalTwinInferredTru
   };
 }
 
+function normalizeJourneyPhases(raw: unknown): OperationalJourneyPhase[] {
+  if (!Array.isArray(raw)) return [];
+  const out: OperationalJourneyPhase[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const key = pick(rec, "key", toOptionalString) ?? pick(rec, "id", toOptionalString);
+    const label = pick(rec, "label", toOptionalString) ?? pick(rec, "title", toOptionalString);
+    if (!key || !label) continue;
+    out.push({
+      key,
+      label,
+      completed: Boolean(rec.completed ?? rec.done),
+      current: Boolean(rec.current ?? rec.is_current),
+    });
+  }
+  return out;
+}
+
+function normalizeRouteNodes(raw: unknown): OperationalRouteNode[] {
+  if (!Array.isArray(raw)) return [];
+  const out: OperationalRouteNode[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const code = pick(rec, "code", toOptionalString);
+    const name = pick(rec, "name", toOptionalString) ?? pick(rec, "label", toOptionalString);
+    if (!code && !name) continue;
+    out.push({
+      code,
+      name,
+      label: pick(rec, "label", toOptionalString) ?? name ?? code,
+      is_current: Boolean(rec.is_current ?? rec.current),
+      is_destination: Boolean(rec.is_destination ?? rec.is_dest),
+    });
+  }
+  return out;
+}
+
 function normalizeJourneyProgress(raw: unknown): OperationalDigitalTwinJourneyProgress | null {
   const rec = asRecord(raw);
   if (!rec) return null;
@@ -270,7 +333,12 @@ function normalizeNextStep(raw: unknown): OperationalDigitalTwinNextStep | null 
   const label = pick(rec, "label", toOptionalString) ?? pick(rec, "title", toOptionalString);
   const key = pick(rec, "key", toOptionalString) ?? pick(rec, "id", toOptionalString);
   if (!label && !key) return null;
-  return { key, label: label ?? key };
+  return {
+    key,
+    label: label ?? key,
+    eta: pick(rec, "eta", toOptionalString) ?? pick(rec, "eta_at", toOptionalString),
+    minutes: pick(rec, "minutes", toFiniteNumber) ?? pick(rec, "minutes_to_next", toFiniteNumber),
+  };
 }
 
 function normalizeRisk(raw: unknown): OperationalDigitalTwinRisk | null {
@@ -334,6 +402,12 @@ export function normalizeOperationalDigitalTwin(raw: unknown): OperationalDigita
 
   const journeyRaw = root.journey_progress ?? root.journeyProgress;
   const nextStepRaw = root.next_expected_step ?? root.nextExpectedStep;
+  const routeRaw =
+    root.route_nodes ??
+    root.routeNodes ??
+    asRecord(root.route)?.nodes ??
+    asRecord(root.corridor)?.nodes ??
+    asRecord(root.journey)?.nodes;
 
   return {
     container_id,
@@ -360,6 +434,26 @@ export function normalizeOperationalDigitalTwin(raw: unknown): OperationalDigita
     map: normalizeMapData(root.map),
     gps_status: pick(root, "gps_status", toOptionalString),
     gps_last_seen_at: pick(root, "gps_last_seen_at", toOptionalString),
+    current_node_label:
+      pick(root, "current_node_label", toOptionalString) ??
+      pick(root, "current_node_name", toOptionalString),
+    next_node_label:
+      pick(root, "next_node_label", toOptionalString) ??
+      pick(root, "next_node_name", toOptionalString),
+    minutes_to_next:
+      pick(root, "minutes_to_next", toFiniteNumber) ??
+      pick(root, "minutes_until_next", toFiniteNumber),
+    corridor_name:
+      pick(root, "corridor_name", toOptionalString) ??
+      pick(asRecord(root.corridor) ?? {}, "name", toOptionalString) ??
+      pick(asRecord(root.corridor) ?? {}, "label", toOptionalString),
+    route_nodes: normalizeRouteNodes(routeRaw),
+    journey_phases: normalizeJourneyPhases(
+      root.journey_phases ?? root.journeyPhases ?? asRecord(journeyRaw)?.phases,
+    ),
+    heartbeat_at:
+      pick(root, "heartbeat_at", toOptionalString) ??
+      pick(root, "updated_at", toOptionalString),
   };
 }
 
