@@ -12,12 +12,19 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import {
-  driverAssignmentDisplay,
   formatGpsAge,
   formatOperationalDateTime,
   gpsStatusDisplay,
-  rutafyStatusLabel,
 } from "@/lib/operationalControlConstants";
+import {
+  formatDestinationLabel,
+  formatScheduledLabel,
+  formatTimeLabel,
+  resolveDetailEtaDisplay,
+  resolveDetailOperationalState,
+  resolveDestinationLabel,
+  resolvePortDisplay,
+} from "@/lib/operationalControlDisplay";
 import { buildRiskAlerts, TIMELINE_OPERATION_STEPS } from "@/lib/operationalControlUx";
 import { cn } from "@/lib/utils";
 import { FileText, Mail } from "lucide-react";
@@ -42,6 +49,32 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 function TruthComparison({ detail }: { detail: OperationalControlContainerDetail }) {
   const d = detail.declared_truth;
   const o = detail.observed_truth;
+  const declaredPort = resolvePortDisplay(
+    {
+      confirmed_port_code: null,
+      declared_port_code: d.declared_port,
+      declared_port: d.declared_port,
+      confirmed_port_city: null,
+      declared_port_city: null,
+    },
+    detail.map,
+  );
+  const realPort = resolvePortDisplay(
+    {
+      confirmed_port_code: o.confirmed_port,
+      declared_port_code: d.declared_port,
+      declared_port: d.declared_port,
+      confirmed_port_city: null,
+      declared_port_city: null,
+    },
+    detail.map,
+  );
+  const declaredDestination = formatDestinationLabel(
+    d.declared_destination,
+    detail.map.destination?.city,
+  );
+  const eta = resolveDetailEtaDisplay(detail);
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-3 items-stretch">
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
@@ -49,22 +82,28 @@ function TruthComparison({ detail }: { detail: OperationalControlContainerDetail
         <div className="space-y-2 text-sm">
           <p>
             <span className="text-gray-500">Puerto </span>
-            <span className="font-semibold">{d.declared_port?.trim() || "—"}</span>
+            <span className="font-semibold">{declaredPort.code}</span>
+          </p>
+          <p>
+            <span className="text-gray-500">Destino </span>
+            <span className="font-semibold">{declaredDestination}</span>
           </p>
           <p>
             <span className="text-gray-500">Hora </span>
             <span className="font-semibold tabular-nums">
-              {formatOperationalDateTime(d.scheduled_time)}
+              {formatScheduledLabel(d.scheduled_time)}
             </span>
           </p>
           <p>
             <span className="text-gray-500">Conductor </span>
-            <span className="font-semibold">{d.driver_name?.trim() || detail.driver.name?.trim() || "—"}</span>
+            <span className="font-semibold">
+              {d.driver_name?.trim() || detail.driver.name?.trim() || "Sin conductor"}
+            </span>
           </p>
           <p>
             <span className="text-gray-500">Placa </span>
             <span className="font-semibold font-mono">
-              {d.driver_plate?.trim() || detail.driver.plate?.trim() || "—"}
+              {d.driver_plate?.trim() || detail.driver.plate?.trim() || "Sin placa"}
             </span>
           </p>
         </div>
@@ -75,12 +114,24 @@ function TruthComparison({ detail }: { detail: OperationalControlContainerDetail
         <div className="space-y-2 text-sm">
           <p>
             <span className="text-gray-500">Puerto </span>
-            <span className="font-semibold">{o.confirmed_port?.trim() || "—"}</span>
+            <span className="font-semibold">{realPort.code}</span>
+          </p>
+          <p>
+            <span className="text-gray-500">ETA destino </span>
+            <span
+              className={cn(
+                "font-semibold tabular-nums",
+                eta.isExpired && "text-orange-700",
+              )}
+            >
+              {eta.timeLabel}
+              {eta.subLabel ? ` · ${eta.subLabel}` : ""}
+            </span>
           </p>
           <p>
             <span className="text-gray-500">Hora </span>
             <span className="font-semibold tabular-nums">
-              {formatOperationalDateTime(o.actual_entry_at ?? o.eta_at)}
+              {formatTimeLabel(o.actual_entry_at ?? o.actual_exit_at)}
             </span>
           </p>
           <p>
@@ -91,7 +142,7 @@ function TruthComparison({ detail }: { detail: OperationalControlContainerDetail
           </p>
           <p>
             <span className="text-gray-500">Movimiento </span>
-            <span className="font-semibold">{o.movement_status?.trim() || "—"}</span>
+            <span className="font-semibold">{o.movement_status?.trim() || "Sin movimiento"}</span>
           </p>
         </div>
       </div>
@@ -152,6 +203,31 @@ export function OperationalControlDrawer({
       ? detail.timeline
       : TIMELINE_OPERATION_STEPS.map((title) => ({ title, at: null, detail: null }));
 
+  const summaryPort = detail
+    ? resolvePortDisplay(
+        {
+          confirmed_port_code: detail.observed_truth.confirmed_port,
+          declared_port_code: detail.declared_truth.declared_port,
+          declared_port: detail.declared_truth.declared_port,
+          confirmed_port_city: null,
+          declared_port_city: null,
+        },
+        detail.map,
+      )
+    : null;
+  const summaryDestination = detail
+    ? resolveDestinationLabel(
+        {
+          destination_code: null,
+          declared_destination_code: detail.declared_truth.declared_destination,
+          destination: detail.declared_truth.declared_destination,
+          destination_city: detail.map.destination?.city ?? null,
+        },
+        detail.map,
+      )
+    : null;
+  const summaryEta = detail ? resolveDetailEtaDisplay(detail) : null;
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto p-0">
@@ -179,37 +255,61 @@ export function OperationalControlDrawer({
                 <SectionTitle>Resumen</SectionTitle>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <p className="text-gray-500 text-xs">Estado</p>
+                    <p className="text-gray-500 text-xs">Estado operacional</p>
                     <p className="font-semibold text-[#1E3A5F]">
-                      {rutafyStatusLabel(detail.rutafy_status)}
+                      {resolveDetailOperationalState(detail)}
                     </p>
                   </div>
                   <div>
                     <p className="text-gray-500 text-xs">Puerto</p>
+                    <p className="font-semibold">{summaryPort?.code ?? "Sin puerto"}</p>
+                    {summaryPort?.city ? (
+                      <p className="text-xs text-gray-500">{summaryPort.city}</p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <p className="text-gray-500 text-xs">Destino declarado</p>
                     <p className="font-semibold">
-                      {detail.declared_truth.declared_port?.trim() || "—"}
+                      {detail.declared_truth.declared_destination?.trim()
+                        ? formatDestinationLabel(detail.declared_truth.declared_destination)
+                        : summaryDestination ?? "Sin destino"}
                     </p>
                   </div>
                   <div>
-                    <p className="text-gray-500 text-xs">Destino</p>
-                    <p className="font-semibold">
-                      {detail.declared_truth.declared_destination?.trim() || "—"}
+                    <p className="text-gray-500 text-xs">ETA destino</p>
+                    <p
+                      className={cn(
+                        "font-semibold tabular-nums",
+                        summaryEta?.isExpired && "text-orange-700",
+                      )}
+                    >
+                      {summaryEta?.timeLabel ?? "Sin ETA"}
                     </p>
+                    {summaryEta?.subLabel ? (
+                      <p
+                        className={cn(
+                          "text-xs",
+                          summaryEta.isExpired ? "text-orange-600" : "text-gray-500",
+                        )}
+                      >
+                        {summaryEta.subLabel}
+                      </p>
+                    ) : null}
                   </div>
                   <div>
                     <p className="text-gray-500 text-xs">Programación</p>
                     <p className="font-semibold tabular-nums">
-                      {formatOperationalDateTime(detail.declared_truth.scheduled_time)}
+                      {formatScheduledLabel(detail.declared_truth.scheduled_time)}
                     </p>
                   </div>
                   <div>
                     <p className="text-gray-500 text-xs">Conductor</p>
-                    <p className="font-semibold">{detail.driver.name?.trim() || "—"}</p>
+                    <p className="font-semibold">{detail.driver.name?.trim() || "Sin conductor"}</p>
                   </div>
-                  <div>
+                  <div className="col-span-2">
                     <p className="text-gray-500 text-xs">Placa / GPS</p>
                     <p className="font-semibold">
-                      {detail.driver.plate?.trim() || "—"} ·{" "}
+                      {detail.driver.plate?.trim() || "Sin placa"} ·{" "}
                       {gpsStatusDisplay(detail.gps_status)}
                       {formatGpsAge(detail.gps_last_seen_at)
                         ? ` · ${formatGpsAge(detail.gps_last_seen_at)}`

@@ -32,6 +32,19 @@ export type OperationalControlContainerRow = {
   destination?: string | null;
   phase?: string | null;
   rutafy_status?: string | null;
+  operational_state?: string | null;
+  monitoring_status?: string | null;
+  status_raw?: string | null;
+  operational_phase?: string | null;
+  confirmed_port_code?: string | null;
+  declared_port_code?: string | null;
+  confirmed_port_city?: string | null;
+  declared_port_city?: string | null;
+  destination_code?: string | null;
+  declared_destination_code?: string | null;
+  destination_city?: string | null;
+  eta?: string | null;
+  window_end_at?: string | null;
   driver_assignment_state?: string | null;
   gps_status?: string | null;
   gps_last_seen_at?: string | null;
@@ -57,6 +70,8 @@ export type OperationalControlMapPoint = {
   lat: number;
   lng: number;
   label?: string | null;
+  code?: string | null;
+  city?: string | null;
 };
 
 export type OperationalControlMapData = {
@@ -128,6 +143,7 @@ export type OperationalControlContainerDetail = {
   map: OperationalControlMapData;
   timeline: OperationalControlTimelineEvent[];
   history: OperationalControlHistoryEvent[];
+  current_monitoring?: { eta?: string | null } | null;
 };
 
 export type OperationalControlListResult = {
@@ -306,11 +322,39 @@ function normalizeContainerRow(raw: unknown): OperationalControlContainerRow | n
       pick(rec, "driver_name", toOptionalString) ?? pick(rec, "driver", toOptionalString),
     plate: pick(rec, "plate", toOptionalString) ?? pick(rec, "placa", toOptionalString),
     declared_port:
-      pick(rec, "declared_port", toOptionalString) ?? pick(rec, "port", toOptionalString),
-    destination: pick(rec, "destination", toOptionalString) ?? pick(rec, "destino", toOptionalString),
+      pick(rec, "declared_port", toOptionalString) ??
+      pick(rec, "port", toOptionalString) ??
+      pick(rec, "declared_port_code", toOptionalString),
+    destination:
+      pick(rec, "destination", toOptionalString) ??
+      pick(rec, "destino", toOptionalString) ??
+      pick(rec, "destination_code", toOptionalString) ??
+      pick(rec, "declared_destination_code", toOptionalString),
     phase: pick(rec, "phase", toOptionalString),
     rutafy_status:
       pick(rec, "rutafy_status", toOptionalString) ?? pick(rec, "status", toOptionalString),
+    operational_state: pick(rec, "operational_state", toOptionalString),
+    monitoring_status: pick(rec, "monitoring_status", toOptionalString),
+    status_raw: pick(rec, "status_raw", toOptionalString),
+    operational_phase:
+      pick(rec, "operational_phase", toOptionalString) ?? pick(rec, "operationalPhase", toOptionalString),
+    confirmed_port_code:
+      pick(rec, "confirmed_port_code", toOptionalString) ??
+      pick(rec, "confirmed_port", toOptionalString),
+    declared_port_code:
+      pick(rec, "declared_port_code", toOptionalString) ??
+      pick(rec, "declared_port", toOptionalString),
+    confirmed_port_city: pick(rec, "confirmed_port_city", toOptionalString),
+    declared_port_city: pick(rec, "declared_port_city", toOptionalString),
+    destination_code: pick(rec, "destination_code", toOptionalString),
+    declared_destination_code: pick(rec, "declared_destination_code", toOptionalString),
+    destination_city: pick(rec, "destination_city", toOptionalString),
+    eta:
+      pick(rec, "eta", toOptionalString) ??
+      pick(rec, "eta_at", toOptionalString) ??
+      pick(rec, "destination_eta", toOptionalString),
+    window_end_at:
+      pick(rec, "window_end_at", toOptionalString) ?? pick(rec, "window_end", toOptionalString),
     driver_assignment_state: pick(rec, "driver_assignment_state", toOptionalString),
     gps_status: pick(rec, "gps_status", toOptionalString),
     gps_last_seen_at: pick(rec, "gps_last_seen_at", toOptionalString),
@@ -345,11 +389,19 @@ function normalizeMapPoint(raw: unknown): OperationalControlMapPoint | null {
   if (!rec) return null;
   const lat = pick(rec, "lat", toFiniteNumber);
   const lng = pick(rec, "lng", toFiniteNumber);
+  const code = pick(rec, "code", toOptionalString);
+  const city = pick(rec, "city", toOptionalString);
+  const label =
+    pick(rec, "label", toOptionalString) ??
+    pick(rec, "name", toOptionalString) ??
+    code;
   if (lat == null || lng == null) return null;
   return {
     lat,
     lng,
-    label: pick(rec, "label", toOptionalString) ?? pick(rec, "name", toOptionalString),
+    label,
+    code,
+    city,
   };
 }
 
@@ -477,6 +529,17 @@ function normalizeDriver(raw: unknown): OperationalControlDriverInfo {
   };
 }
 
+function normalizeCurrentMonitoring(raw: unknown): { eta?: string | null } | null {
+  const rec = asRecord(raw);
+  if (!rec) return null;
+  const eta =
+    pick(rec, "eta", toOptionalString) ??
+    pick(rec, "eta_at", toOptionalString) ??
+    pick(rec, "destination_eta", toOptionalString);
+  if (!eta && Object.keys(rec).length === 0) return null;
+  return { eta };
+}
+
 function normalizeContainerDetail(raw: unknown): OperationalControlContainerDetail | null {
   if (!raw || typeof raw !== "object") return null;
   const rec = raw as Record<string, unknown>;
@@ -513,6 +576,9 @@ function normalizeContainerDetail(raw: unknown): OperationalControlContainerDeta
     map: normalizeMapData(root.map ?? rec.map),
     timeline: normalizeTimeline(root.timeline ?? rec.timeline),
     history: normalizeHistory(root.history ?? rec.history),
+    current_monitoring: normalizeCurrentMonitoring(
+      root.current_monitoring ?? rec.current_monitoring ?? root.currentMonitoring,
+    ),
   };
 }
 

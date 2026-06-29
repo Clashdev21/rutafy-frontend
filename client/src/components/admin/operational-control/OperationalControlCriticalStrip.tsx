@@ -5,8 +5,12 @@ import {
 } from "@/lib/operationalControlUx";
 import {
   formatGpsAge,
-  rutafyStatusLabel,
 } from "@/lib/operationalControlConstants";
+import {
+  resolveOperationalStateLabel,
+  resolvePortDisplay,
+  resolveDestinationLabel,
+} from "@/lib/operationalControlDisplay";
 
 type Props = {
   rows: OperationalControlContainerRow[];
@@ -38,13 +42,16 @@ export function OperationalControlCriticalStrip({ rows, onSelect }: Props) {
                   {row.container_label?.trim() || row.container_id}
                 </p>
                 <p className="text-xs font-medium text-gray-700">
-                  {rutafyStatusLabel(row.rutafy_status)}
+                  {resolveOperationalStateLabel(row)}
                 </p>
                 {gpsAge ? <p className="text-xs text-gray-500">{gpsAge}</p> : null}
                 <div className="flex items-center justify-between gap-2 text-xs text-gray-600 pt-1">
-                  <span className="font-mono">{row.plate?.trim() || "—"}</span>
-                  <span className="truncate">{row.declared_port?.trim() || "—"}</span>
+                  <span className="font-mono">{row.plate?.trim() || "Sin placa"}</span>
+                  <span className="truncate">{resolvePortDisplay(row).code}</span>
                 </div>
+                <p className="text-[10px] text-[#2A9D8F] truncate">
+                  {resolveDestinationLabel(row)}
+                </p>
               </div>
             </button>
           );

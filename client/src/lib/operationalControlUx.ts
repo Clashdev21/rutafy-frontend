@@ -167,6 +167,11 @@ export function matchesCommandSearch(
     row.program_name,
     row.client_name,
     row.declared_port,
+    row.declared_port_code,
+    row.confirmed_port_code,
+    row.destination,
+    row.destination_code,
+    row.declared_destination_code,
   ]
     .filter(Boolean)
     .join(" ")

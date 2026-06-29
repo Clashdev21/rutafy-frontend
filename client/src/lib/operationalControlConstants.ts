@@ -236,10 +236,29 @@ export function clientFilterContainers(
       if (!String(row.program_name ?? "").toLowerCase().includes(program)) return false;
     }
     if (status && status !== "all") {
-      if (normalizeKey(row.rutafy_status) !== normalizeKey(status)) return false;
+      const statusHay = [
+        row.rutafy_status,
+        row.operational_state,
+        row.monitoring_status,
+        row.status_raw,
+        row.operational_phase,
+        row.phase,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (!statusHay.includes(status.toLowerCase())) return false;
     }
     if (port && port !== "all") {
-      if (!String(row.declared_port ?? "").toLowerCase().includes(port)) return false;
+      const portHay = [
+        row.declared_port,
+        row.declared_port_code,
+        row.confirmed_port_code,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (!portHay.includes(port)) return false;
     }
     if (driver && driver !== "all") {
       if (!String(row.driver_name ?? "").toLowerCase().includes(driver)) return false;
