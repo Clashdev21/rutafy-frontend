@@ -188,8 +188,7 @@ export default function AdminOperationalControlPage() {
       <OperationalControlDrawer
         open={drawerOpen}
         containerId={selectedRow?.container_id ?? null}
-        monitoringId={selectedRow?.monitoring_id}
-        riskAlerts={selectedRow?.alerts ?? []}
+        selectedRow={selectedRow}
         onOpenChange={setDrawerOpen}
       />
     </div>

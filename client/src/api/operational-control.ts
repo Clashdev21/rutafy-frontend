@@ -646,16 +646,26 @@ export async function getOperationalControlList(
   }
 }
 
+export type OperationalControlDetailParams = {
+  program_code?: string;
+};
+
 export async function getOperationalControlContainerDetail(
   containerId: string,
+  params?: OperationalControlDetailParams,
 ): Promise<OperationalControlContainerDetail> {
   ensureApiBase();
   const id = containerId.trim();
   if (!id) throw new Error("container_id inválido");
 
+  const query: Record<string, string> = {};
+  const programCode = params?.program_code?.trim();
+  if (programCode) query.program_code = programCode;
+
   try {
     const { data } = await adminHttp.get<Record<string, unknown>>(
       `/v1/admin/operational-control/containers/${encodeURIComponent(id)}`,
+      { params: Object.keys(query).length > 0 ? query : undefined },
     );
     const detail = normalizeContainerDetail(data);
     if (!detail) throw new Error("Respuesta de contenedor inválida");
