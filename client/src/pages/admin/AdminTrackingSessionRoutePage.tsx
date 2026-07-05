@@ -1,10 +1,12 @@
 import {
   getAdminTrackingSessionDetail,
   getAdminTrackingSessionRoute,
+  type AdminTrackingSessionCloseResult,
   type AdminTrackingSessionDetail,
   type AdminTrackingSessionRoute,
   type AdminTrackingSessionStats,
 } from "@/api/tracking-sessions";
+import { resolveTrackingSessionId } from "@/api/tracking-sessions";
 import {
   TrackingCaptureQualityAlert,
   TrackingCaptureQualityHero,
@@ -99,6 +101,22 @@ export default function AdminTrackingSessionRoutePage() {
     [detail, route],
   );
 
+  const handleSessionClosed = useCallback((result: AdminTrackingSessionCloseResult) => {
+    const sid = result.session.session_id;
+    setDetail((prev) =>
+      prev && resolveTrackingSessionId(prev.session) === sid
+        ? {
+            ...prev,
+            session: {
+              ...prev.session,
+              status: result.session.status,
+              ended_at: result.session.ended_at ?? prev.session.ended_at,
+            },
+          }
+        : prev,
+    );
+  }, []);
+
   const isLoading = loadingDetail || loadingRoute;
 
   if (!sessionId) {
@@ -139,6 +157,7 @@ export default function AdminTrackingSessionRoutePage() {
         session={detail.session}
         captureQuality={heroStats?.capture_quality}
         onBack={() => setLocation("/admin/tracking")}
+        onSessionClosed={handleSessionClosed}
       />
 
       {heroStats ? <TrackingCaptureQualityHero stats={heroStats} /> : null}

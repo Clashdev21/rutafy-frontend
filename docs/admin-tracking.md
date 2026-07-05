@@ -53,7 +53,7 @@ Registro de una ventana de captura GPS en Android asociada a:
 
 | Campo | Significado |
 |-------|-------------|
-| `id` | UUID de la sesión |
+| `session_id` / `id` | UUID de la sesión (el frontend normaliza ambos) |
 | `owner_user_id` | Usuario dueño de la captura |
 | `actor_id` / `actor_type` | Quién capturó (`messenger`, `transporter`, `admin`) |
 | `vehicle_id` / `vehicle_label` | Unidad / placa mostrada en UI |
@@ -69,9 +69,9 @@ Registro de una ventana de captura GPS en Android asociada a:
 
 | status | Label UI | Significado |
 |--------|----------|-------------|
-| `active` | Activa | Captura en curso o reciente sin cierre formal |
+| `active` | Activa | Captura en curso |
 | `ended` | Finalizada | Sesión cerrada normalmente |
-| `abandoned` | Abandonada | Sesión interrumpida o sin cierre limpio |
+| `abandoned` | Cancelada | Sesión cancelada o interrumpida |
 
 ### Listado (`AdminTrackingSessionsPage`)
 
@@ -79,8 +79,10 @@ Columnas: vehículo, actor, propósito, estado, inicio, duración, puntos, **cal
 
 Acciones por fila:
 
-- **Ver resumen** → dialog con `getAdminTrackingSessionDetail`
-- **Vista completa** → navega a `/admin/tracking/:id`
+- **Detalle** → dialog con métricas, puntos recientes y cierre de sesión activa
+- **Ruta** → navega a `/admin/tracking/:sessionId`
+
+Si `status=active`, el detalle y la vista de ruta muestran **Finalizar** y **Cancelar** (con confirmación).
 
 Recarga manual con botón **Recargar** (sin polling automático).
 
@@ -406,6 +408,7 @@ client/src/
 │   └── trackingRouteVisualSegments.ts      # buildVisualSegments
 └── components/admin/
     ├── TrackingSessionDetailDialog.tsx
+    ├── TrackingSessionCloseActions.tsx
     ├── TrackingSessionStatsGrid.tsx
     ├── TrackingCaptureQualityBanner.tsx
     └── tracking-route/
@@ -426,6 +429,22 @@ client/src/
 | GET | `/v1/admin/tracking-sessions?limit=50&status=` | Listado |
 | GET | `/v1/admin/tracking-sessions/:id` | Detalle + stats |
 | GET | `/v1/admin/tracking-sessions/:id/route` | Puntos, segmentos, distancia, calidad |
+| GET | `/v1/admin/tracking-sessions/:id/points?limit=` | Puntos GPS recientes (preview en detalle) |
+| POST | `/v1/admin/tracking-sessions/:id/end` | Finalizar sesión activa → `ended` |
+| POST | `/v1/admin/tracking-sessions/:id/cancel` | Cancelar sesión activa → `abandoned` |
+
+Respuesta de cierre:
+
+```json
+{
+  "ok": true,
+  "session": {
+    "session_id": "…",
+    "status": "ended",
+    "ended_at": "…"
+  }
+}
+```
 
 Auth: `adminHttp` con `VITE_RUTAFY_ADMIN_KEY`.
 

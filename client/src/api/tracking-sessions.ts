@@ -2,6 +2,9 @@ import { adminHttp, parseAdminApiError } from "@/api/adminHttp";
 import axios from "axios";
 
 export type AdminTrackingSession = {
+  /** Alias estable para APIs que devuelven session_id. */
+  session_id: string;
+  /** @deprecated Usar session_id; se mantiene por compatibilidad interna. */
   id: string;
   owner_user_id?: string | null;
   actor_id?: string | null;
@@ -13,9 +16,15 @@ export type AdminTrackingSession = {
   started_at?: string | null;
   ended_at?: string | null;
   last_heartbeat_at?: string | null;
+  last_captured_at?: string | null;
   consent_at?: string | null;
   point_count?: number | null;
+  points_count?: number | null;
   duration_seconds?: number | null;
+  duration_minutes?: number | null;
+  avg_accuracy_m?: number | null;
+  avg_speed_kmh?: number | null;
+  avg_speed_mps?: number | null;
   capture_quality?: string | null;
 };
 
@@ -48,6 +57,44 @@ export type ListAdminTrackingSessionsOptions = {
   limit?: number;
   status?: string;
 };
+
+export type AdminTrackingSessionCloseResult = {
+  ok: boolean;
+  session: {
+    session_id: string;
+    status: string;
+    ended_at?: string | null;
+  };
+  trace_id?: string;
+};
+
+export type AdminTrackingSessionPointsResult = {
+  trace_id?: string;
+  session_id: string;
+  points: TrackingRoutePoint[];
+  limit: number;
+  total?: number | null;
+};
+
+/** ID canónico de sesión para rutas y mutaciones. */
+export function resolveTrackingSessionId(
+  session: Pick<AdminTrackingSession, "session_id" | "id"> | string,
+): string {
+  if (typeof session === "string") return session.trim();
+  return (session.session_id || session.id || "").trim();
+}
+
+function parseAdminTrackingError(err: unknown, fallback: string): never {
+  if (axios.isAxiosError(err) && err.response) {
+    throw new Error(
+      parseAdminApiError(
+        err.response.data as { error?: string; message?: string },
+        fallback,
+      ),
+    );
+  }
+  throw err;
+}
 
 function ensureApiBase(): void {
   const base = import.meta.env.VITE_RUTAFY_API_BASE;
@@ -95,11 +142,31 @@ function pickCaptureQualityFromSession(rec: Record<string, unknown>): string | n
 function normalizeSession(raw: unknown): AdminTrackingSession | null {
   if (!raw || typeof raw !== "object") return null;
   const rec = raw as Record<string, unknown>;
-  const id = pick(rec, "id", toOptionalString);
-  if (!id) return null;
+  const sessionId =
+    pick(rec, "session_id", toOptionalString) ?? pick(rec, "id", toOptionalString);
+  if (!sessionId) return null;
+
+  const pointsCount =
+    pick(rec, "points_count", toFiniteNumber) ??
+    pick(rec, "point_count", toFiniteNumber);
+
+  const durationSeconds = pick(rec, "duration_seconds", toFiniteNumber);
+  const durationMinutes =
+    pick(rec, "duration_minutes", toFiniteNumber) ??
+    (durationSeconds != null ? durationSeconds / 60 : null);
+
+  const avgSpeedMps = pick(rec, "avg_speed_mps", toFiniteNumber);
+  const avgSpeedKmh =
+    pick(rec, "avg_speed_kmh", toFiniteNumber) ??
+    (avgSpeedMps != null ? avgSpeedMps * 3.6 : null);
+
+  const lastCapturedAt =
+    pick(rec, "last_captured_at", toOptionalString) ??
+    pick(rec, "last_heartbeat_at", toOptionalString);
 
   return {
-    id,
+    session_id: sessionId,
+    id: sessionId,
     owner_user_id: pick(rec, "owner_user_id", toOptionalString),
     actor_id: pick(rec, "actor_id", toOptionalString),
     actor_type: pick(rec, "actor_type", toOptionalString),
@@ -110,10 +177,37 @@ function normalizeSession(raw: unknown): AdminTrackingSession | null {
     started_at: pick(rec, "started_at", toOptionalString),
     ended_at: pick(rec, "ended_at", toOptionalString),
     last_heartbeat_at: pick(rec, "last_heartbeat_at", toOptionalString),
+    last_captured_at: lastCapturedAt,
     consent_at: pick(rec, "consent_at", toOptionalString),
-    point_count: pick(rec, "point_count", toFiniteNumber),
-    duration_seconds: pick(rec, "duration_seconds", toFiniteNumber),
+    point_count: pointsCount,
+    points_count: pointsCount,
+    duration_seconds: durationSeconds,
+    duration_minutes: durationMinutes,
+    avg_accuracy_m: pick(rec, "avg_accuracy_m", toFiniteNumber),
+    avg_speed_kmh: avgSpeedKmh,
+    avg_speed_mps: avgSpeedMps,
     capture_quality: pickCaptureQualityFromSession(rec),
+  };
+}
+
+function normalizeCloseResult(raw: unknown): AdminTrackingSessionCloseResult | null {
+  if (!raw || typeof raw !== "object") return null;
+  const rec = raw as Record<string, unknown>;
+  const sessionRaw = rec.session;
+  if (!sessionRaw || typeof sessionRaw !== "object") return null;
+  const s = sessionRaw as Record<string, unknown>;
+  const session_id =
+    pick(s, "session_id", toOptionalString) ?? pick(s, "id", toOptionalString);
+  const status = pick(s, "status", toOptionalString);
+  if (!session_id || !status) return null;
+  return {
+    ok: rec.ok === true || rec.ok === undefined,
+    session: {
+      session_id,
+      status,
+      ended_at: pick(s, "ended_at", toOptionalString),
+    },
+    trace_id: toOptionalString(rec.trace_id) ?? undefined,
   };
 }
 
@@ -165,15 +259,7 @@ export async function listAdminTrackingSessions(
       sessions,
     };
   } catch (err) {
-    if (axios.isAxiosError(err) && err.response) {
-      throw new Error(
-        parseAdminApiError(
-          err.response.data as { error?: string; message?: string },
-          `Error al cargar sesiones de tracking (${err.response.status})`,
-        ),
-      );
-    }
-    throw err;
+    parseAdminTrackingError(err, `Error al cargar sesiones de tracking`);
   }
 }
 
@@ -439,15 +525,7 @@ export async function getAdminTrackingSessionRoute(
     }
     return route;
   } catch (err) {
-    if (axios.isAxiosError(err) && err.response) {
-      throw new Error(
-        parseAdminApiError(
-          err.response.data as { error?: string; message?: string },
-          `Error al cargar ruta GPS (${err.response.status})`,
-        ),
-      );
-    }
-    throw err;
+    parseAdminTrackingError(err, "Error al cargar ruta GPS");
   }
 }
 
@@ -483,14 +561,82 @@ export async function getAdminTrackingSessionDetail(
       stats: normalizeStats(statsRaw),
     };
   } catch (err) {
-    if (axios.isAxiosError(err) && err.response) {
-      throw new Error(
-        parseAdminApiError(
-          err.response.data as { error?: string; message?: string },
-          `Error al cargar detalle de sesión (${err.response.status})`,
-        ),
-      );
-    }
-    throw err;
+    parseAdminTrackingError(err, "Error al cargar detalle de sesión");
   }
+}
+
+export async function getAdminTrackingSessionPoints(
+  sessionId: string,
+  limit = 20,
+): Promise<AdminTrackingSessionPointsResult> {
+  ensureApiBase();
+  const id = sessionId.trim();
+  if (!id) {
+    throw new Error("session_id inválido");
+  }
+
+  try {
+    const { data } = await adminHttp.get<Record<string, unknown>>(
+      `/v1/admin/tracking-sessions/${encodeURIComponent(id)}/points`,
+      { params: { limit } },
+    );
+
+    const session_id =
+      pick(data, "session_id", toOptionalString) ??
+      pick(data, "sessionId", toOptionalString) ??
+      id;
+
+    const pointsRaw = data.points ?? data.items;
+    const points = normalizeRoutePoints(pointsRaw);
+
+    return {
+      trace_id: toOptionalString(data.trace_id) ?? undefined,
+      session_id,
+      points,
+      limit: toFiniteNumber(data.limit) ?? limit,
+      total: pick(data, "total", toFiniteNumber) ?? pick(data, "point_count", toFiniteNumber),
+    };
+  } catch (err) {
+    parseAdminTrackingError(err, "Error al cargar puntos GPS");
+  }
+}
+
+async function postAdminTrackingSessionAction(
+  sessionId: string,
+  action: "end" | "cancel",
+): Promise<AdminTrackingSessionCloseResult> {
+  ensureApiBase();
+  const id = sessionId.trim();
+  if (!id) {
+    throw new Error("session_id inválido");
+  }
+
+  try {
+    const { data } = await adminHttp.post<Record<string, unknown>>(
+      `/v1/admin/tracking-sessions/${encodeURIComponent(id)}/${action}`,
+      {},
+    );
+    const result = normalizeCloseResult(data);
+    if (!result) {
+      throw new Error("Respuesta de cierre inválida");
+    }
+    return result;
+  } catch (err) {
+    parseAdminTrackingError(
+      err,
+      action === "end" ? "Error al finalizar la captura" : "Error al cancelar la captura",
+    );
+  }
+}
+
+export function endAdminTrackingSession(
+  sessionId: string,
+): Promise<AdminTrackingSessionCloseResult> {
+  return postAdminTrackingSessionAction(sessionId, "end");
+}
+
+export function cancelAdminTrackingSession(
+  sessionId: string,
+): Promise<AdminTrackingSessionCloseResult> {
+  return postAdminTrackingSessionAction(sessionId, "cancel");
 }

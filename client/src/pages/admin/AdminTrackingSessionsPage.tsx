@@ -1,8 +1,12 @@
 import {
   getAdminTrackingSessionDetail,
+  getAdminTrackingSessionPoints,
   listAdminTrackingSessions,
+  resolveTrackingSessionId,
   type AdminTrackingSession,
+  type AdminTrackingSessionCloseResult,
   type AdminTrackingSessionDetail,
+  type TrackingRoutePoint,
 } from "@/api/tracking-sessions";
 import { TrackingSessionDetailDialog } from "@/components/admin/TrackingSessionDetailDialog";
 import { Badge } from "@/components/ui/badge";
@@ -19,16 +23,18 @@ import {
 import {
   captureQualityBadgeClass,
   captureQualityDisplay,
-  trackingActorTypeLabel,
   trackingPurposeLabel,
   trackingStatusBadgeClass,
   trackingStatusLabel,
 } from "@/lib/trackingSessionConstants";
 import {
-  formatDurationSeconds,
+  formatAccuracyMeters,
+  formatDurationMinutes,
   formatHeartbeatAge,
   formatPointCount,
+  formatSpeedKmh,
   formatTrackingDateTime,
+  truncateUuid,
 } from "@/lib/trackingSessionFormatters";
 import { Eye, Map, RefreshCw, Route } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -36,6 +42,20 @@ import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 const LIST_LIMIT = 50;
+
+function resolveListDurationMinutes(session: AdminTrackingSession): number | null {
+  if (session.duration_minutes != null && Number.isFinite(session.duration_minutes)) {
+    return session.duration_minutes;
+  }
+  if (session.duration_seconds != null && Number.isFinite(session.duration_seconds)) {
+    return session.duration_seconds / 60;
+  }
+  return null;
+}
+
+function resolveListPointsCount(session: AdminTrackingSession): number | null {
+  return session.points_count ?? session.point_count ?? null;
+}
 
 export default function AdminTrackingSessionsPage() {
   const [, setLocation] = useLocation();
@@ -47,6 +67,9 @@ export default function AdminTrackingSessionsPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detail, setDetail] = useState<AdminTrackingSessionDetail | null>(null);
+  const [pointsLoading, setPointsLoading] = useState(false);
+  const [pointsError, setPointsError] = useState<string | null>(null);
+  const [points, setPoints] = useState<TrackingRoutePoint[]>([]);
 
   const loadSessions = useCallback(async () => {
     setIsLoading(true);
@@ -68,6 +91,33 @@ export default function AdminTrackingSessionsPage() {
     void loadSessions();
   }, [loadSessions]);
 
+  const applyCloseToList = useCallback((result: AdminTrackingSessionCloseResult) => {
+    const sid = result.session.session_id;
+    setSessions((prev) =>
+      prev.map((s) =>
+        resolveTrackingSessionId(s) === sid
+          ? {
+              ...s,
+              status: result.session.status,
+              ended_at: result.session.ended_at ?? s.ended_at,
+            }
+          : s,
+      ),
+    );
+    setDetail((prev) =>
+      prev && resolveTrackingSessionId(prev.session) === sid
+        ? {
+            ...prev,
+            session: {
+              ...prev.session,
+              status: result.session.status,
+              ended_at: result.session.ended_at ?? prev.session.ended_at,
+            },
+          }
+        : prev,
+    );
+  }, []);
+
   const openDetail = useCallback(async (sessionId: string) => {
     const id = sessionId.trim();
     if (!id) return;
@@ -76,10 +126,24 @@ export default function AdminTrackingSessionsPage() {
     setDetailLoading(true);
     setDetailError(null);
     setDetail(null);
+    setPoints([]);
+    setPointsError(null);
+    setPointsLoading(true);
 
     try {
-      const result = await getAdminTrackingSessionDetail(id);
-      setDetail(result);
+      const [detailResult, pointsResult] = await Promise.all([
+        getAdminTrackingSessionDetail(id),
+        getAdminTrackingSessionPoints(id, 20).catch((e: unknown) => {
+          const message =
+            e instanceof Error ? e.message : "No fue posible cargar los puntos";
+          setPointsError(message);
+          return null;
+        }),
+      ]);
+      setDetail(detailResult);
+      if (pointsResult) {
+        setPoints(pointsResult.points);
+      }
     } catch (e: unknown) {
       const message =
         e instanceof Error ? e.message : "No fue posible cargar el resumen";
@@ -87,6 +151,7 @@ export default function AdminTrackingSessionsPage() {
       toast.error(message);
     } finally {
       setDetailLoading(false);
+      setPointsLoading(false);
     }
   }, []);
 
@@ -95,6 +160,8 @@ export default function AdminTrackingSessionsPage() {
     if (!open) {
       setDetail(null);
       setDetailError(null);
+      setPoints([]);
+      setPointsError(null);
     }
   };
 
@@ -157,104 +224,114 @@ export default function AdminTrackingSessionsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Unidad / vehículo</TableHead>
-                    <TableHead>Actor</TableHead>
-                    <TableHead>Propósito</TableHead>
+                    <TableHead>Session ID</TableHead>
+                    <TableHead>Unidad</TableHead>
                     <TableHead>Estado</TableHead>
-                    <TableHead>Inicio</TableHead>
-                    <TableHead className="text-right">Duración</TableHead>
                     <TableHead className="text-right">Puntos</TableHead>
+                    <TableHead className="text-right">Duración</TableHead>
+                    <TableHead className="text-right">Precisión</TableHead>
+                    <TableHead className="text-right">Velocidad</TableHead>
+                    <TableHead>Última captura</TableHead>
                     <TableHead>Calidad</TableHead>
-                    <TableHead>Último heartbeat</TableHead>
                     <TableHead className="text-right">Acción</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sessions.map((session) => (
-                    <TableRow key={session.id}>
-                      <TableCell className="max-w-[200px]">
-                        <span
-                          className="font-medium text-[#1E3A5F] line-clamp-2"
-                          title={session.vehicle_label ?? undefined}
-                        >
-                          {session.vehicle_label?.trim() || "—"}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-700 whitespace-nowrap">
-                        {trackingActorTypeLabel(session.actor_type)}
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-700 whitespace-nowrap">
-                        {trackingPurposeLabel(session.purpose)}
-                      </TableCell>
-                      <TableCell>
-                        {session.status ? (
-                          <Badge
-                            variant="outline"
-                            className={`text-xs ${trackingStatusBadgeClass(session.status)}`}
+                  {sessions.map((session) => {
+                    const sid = resolveTrackingSessionId(session);
+                    return (
+                      <TableRow key={sid}>
+                        <TableCell className="font-mono text-[10px] text-gray-600 max-w-[120px]">
+                          <span title={sid}>{truncateUuid(sid, 8, 6)}</span>
+                        </TableCell>
+                        <TableCell className="max-w-[140px]">
+                          <span
+                            className="font-medium text-[#1E3A5F] line-clamp-2 text-sm"
+                            title={session.vehicle_label ?? undefined}
                           >
-                            {trackingStatusLabel(session.status)}
-                          </Badge>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs text-gray-600 whitespace-nowrap tabular-nums">
-                        {formatTrackingDateTime(session.started_at)}
-                      </TableCell>
-                      <TableCell className="text-right text-sm tabular-nums text-gray-700 whitespace-nowrap">
-                        {formatDurationSeconds(session.duration_seconds)}
-                      </TableCell>
-                      <TableCell className="text-right text-sm tabular-nums text-gray-700">
-                        {formatPointCount(session.point_count)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {session.capture_quality?.trim() ? (
-                          <Badge
-                            variant="outline"
-                            className={`text-xs ${captureQualityBadgeClass(session.capture_quality)}`}
-                          >
-                            {captureQualityDisplay(session.capture_quality)}
-                          </Badge>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs text-gray-600 whitespace-nowrap">
-                        <span className="block tabular-nums">
-                          {formatTrackingDateTime(session.last_heartbeat_at)}
-                        </span>
-                        <span className="block text-gray-400 mt-0.5">
-                          {formatHeartbeatAge(session.last_heartbeat_at)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 text-xs gap-1"
-                            onClick={() => void openDetail(session.id)}
-                          >
-                            <Eye className="h-3.5 w-3.5" aria-hidden />
-                            Ver resumen
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 text-xs gap-1 text-[#2A9D8F]"
-                            onClick={() =>
-                              setLocation(`/admin/tracking/${encodeURIComponent(session.id)}`)
-                            }
-                          >
-                            <Map className="h-3.5 w-3.5" aria-hidden />
-                            Vista completa
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                            {session.vehicle_label?.trim() || "—"}
+                          </span>
+                          <span className="block text-[10px] text-gray-400 mt-0.5">
+                            {trackingPurposeLabel(session.purpose)}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          {session.status ? (
+                            <Badge
+                              variant="outline"
+                              className={`text-xs ${trackingStatusBadgeClass(session.status)}`}
+                            >
+                              {trackingStatusLabel(session.status)}
+                            </Badge>
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right text-sm tabular-nums text-gray-700">
+                          {formatPointCount(resolveListPointsCount(session))}
+                        </TableCell>
+                        <TableCell className="text-right text-sm tabular-nums text-gray-700 whitespace-nowrap">
+                          {formatDurationMinutes(resolveListDurationMinutes(session))}
+                        </TableCell>
+                        <TableCell className="text-right text-sm tabular-nums text-gray-700 whitespace-nowrap">
+                          {formatAccuracyMeters(session.avg_accuracy_m)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm tabular-nums text-gray-700 whitespace-nowrap">
+                          {formatSpeedKmh(session.avg_speed_kmh)}
+                        </TableCell>
+                        <TableCell className="text-xs text-gray-600 whitespace-nowrap">
+                          <span className="block tabular-nums">
+                            {formatTrackingDateTime(
+                              session.last_captured_at ?? session.last_heartbeat_at,
+                            )}
+                          </span>
+                          <span className="block text-gray-400 mt-0.5">
+                            {formatHeartbeatAge(
+                              session.last_captured_at ?? session.last_heartbeat_at,
+                            )}
+                          </span>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {session.capture_quality?.trim() ? (
+                            <Badge
+                              variant="outline"
+                              className={`text-xs ${captureQualityBadgeClass(session.capture_quality)}`}
+                            >
+                              {captureQualityDisplay(session.capture_quality)}
+                            </Badge>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-xs gap-1"
+                              onClick={() => void openDetail(sid)}
+                            >
+                              <Eye className="h-3.5 w-3.5" aria-hidden />
+                              Detalle
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-xs gap-1 text-[#2A9D8F]"
+                              onClick={() =>
+                                setLocation(`/admin/tracking/${encodeURIComponent(sid)}`)
+                              }
+                            >
+                              <Map className="h-3.5 w-3.5" aria-hidden />
+                              Ruta
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -268,6 +345,11 @@ export default function AdminTrackingSessionsPage() {
         loading={detailLoading}
         error={detailError}
         detail={detail}
+        pointsLoading={pointsLoading}
+        pointsError={pointsError}
+        points={points}
+        onSessionClosed={applyCloseToList}
+        onRefreshList={() => void loadSessions()}
       />
     </div>
   );

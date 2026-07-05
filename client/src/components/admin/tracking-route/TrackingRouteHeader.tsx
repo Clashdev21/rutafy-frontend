@@ -1,4 +1,9 @@
-import type { AdminTrackingSession } from "@/api/tracking-sessions";
+import type {
+  AdminTrackingSession,
+  AdminTrackingSessionCloseResult,
+} from "@/api/tracking-sessions";
+import { resolveTrackingSessionId } from "@/api/tracking-sessions";
+import { TrackingSessionCloseActions } from "@/components/admin/TrackingSessionCloseActions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,17 +13,31 @@ import {
   trackingStatusBadgeClass,
   trackingStatusLabel,
 } from "@/lib/trackingSessionConstants";
-import { formatTrackingDateTime, truncateUuid } from "@/lib/trackingSessionFormatters";
+import { formatTrackingDateTime } from "@/lib/trackingSessionFormatters";
 import { ArrowLeft } from "lucide-react";
 
 type Props = {
   session: AdminTrackingSession;
   captureQuality?: string | null;
   onBack: () => void;
+  onSessionClosed?: (result: AdminTrackingSessionCloseResult) => void;
+  onRefreshList?: () => void;
 };
 
-export function TrackingRouteHeader({ session, captureQuality, onBack }: Props) {
+export function TrackingRouteHeader({
+  session,
+  captureQuality,
+  onBack,
+  onSessionClosed,
+  onRefreshList,
+}: Props) {
   const quality = captureQuality ?? session.capture_quality;
+  const sessionId = resolveTrackingSessionId(session);
+
+  const handleClosed = (result: AdminTrackingSessionCloseResult) => {
+    onSessionClosed?.(result);
+    onRefreshList?.();
+  };
 
   return (
     <div className="space-y-3">
@@ -40,8 +59,8 @@ export function TrackingRouteHeader({ session, captureQuality, onBack }: Props) 
             Trazabilidad histórica GPS capturada desde Android.
           </p>
           <div className="flex flex-wrap items-center gap-2 pt-1 text-sm text-gray-700">
-            <span className="font-mono text-xs text-gray-500" title={session.id}>
-              {truncateUuid(session.id)}
+            <span className="font-mono text-xs text-gray-500 break-all" title={sessionId}>
+              {sessionId}
             </span>
             <span className="text-gray-300">·</span>
             <span className="font-medium">{session.vehicle_label?.trim() || "—"}</span>
@@ -50,26 +69,34 @@ export function TrackingRouteHeader({ session, captureQuality, onBack }: Props) 
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {session.status ? (
-            <Badge
-              variant="outline"
-              className={`text-xs ${trackingStatusBadgeClass(session.status)}`}
-            >
-              {trackingStatusLabel(session.status)}
-            </Badge>
-          ) : null}
-          {quality?.trim() ? (
-            <Badge
-              variant="outline"
-              className={`text-xs ${captureQualityBadgeClass(quality)}`}
-            >
-              {captureQualityDisplay(quality)}
-            </Badge>
-          ) : null}
-          <span className="text-xs text-gray-500 tabular-nums">
-            Inicio {formatTrackingDateTime(session.started_at)}
-          </span>
+        <div className="flex flex-col items-start sm:items-end gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {session.status ? (
+              <Badge
+                variant="outline"
+                className={`text-xs ${trackingStatusBadgeClass(session.status)}`}
+              >
+                {trackingStatusLabel(session.status)}
+              </Badge>
+            ) : null}
+            {quality?.trim() ? (
+              <Badge
+                variant="outline"
+                className={`text-xs ${captureQualityBadgeClass(quality)}`}
+              >
+                {captureQualityDisplay(quality)}
+              </Badge>
+            ) : null}
+            <span className="text-xs text-gray-500 tabular-nums">
+              Inicio {formatTrackingDateTime(session.started_at)}
+            </span>
+          </div>
+          <TrackingSessionCloseActions
+            sessionId={sessionId}
+            status={session.status}
+            size="sm"
+            onCompleted={handleClosed}
+          />
         </div>
       </div>
     </div>
