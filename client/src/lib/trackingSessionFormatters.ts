@@ -81,6 +81,26 @@ export function formatPointCount(count?: number | null): string {
   return String(Math.round(count));
 }
 
+/** Minutos → "18 min" o "4 h 6 min" */
+export function formatDurationMinutes(minutes?: number | null): string {
+  if (minutes == null || !Number.isFinite(minutes) || minutes < 0) return "—";
+  const totalMin = Math.round(minutes);
+  if (totalMin === 0) return "0 min";
+  const hours = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  if (hours > 0) {
+    if (mins > 0) return `${hours} h ${mins} min`;
+    return `${hours} h`;
+  }
+  return `${mins} min`;
+}
+
+export function formatSpeedKmh(kmh?: number | null): string {
+  if (kmh == null || !Number.isFinite(kmh)) return "—";
+  const rounded = Math.round(kmh * 10) / 10;
+  return `${rounded} km/h`;
+}
+
 export function formatDistanceKm(km?: number | null): string {
   if (km == null || !Number.isFinite(km)) return "—";
   const rounded = Math.round(km * 100) / 100;

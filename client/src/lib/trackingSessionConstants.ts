@@ -7,7 +7,7 @@ export const TRACKING_ACTOR_TYPE_LABELS: Record<string, string> = {
 export const TRACKING_STATUS_LABELS: Record<string, string> = {
   active: "Activa",
   ended: "Finalizada",
-  abandoned: "Abandonada",
+  abandoned: "Cancelada",
 };
 
 export const TRACKING_PURPOSE_LABELS: Record<string, string> = {
@@ -29,6 +29,14 @@ export function trackingStatusLabel(value?: string | null): string {
     .trim()
     .toLowerCase();
   return TRACKING_STATUS_LABELS[key] ?? (key ? key : "—");
+}
+
+export function isTrackingSessionActive(status?: string | null): boolean {
+  return (
+    String(status ?? "")
+      .trim()
+      .toLowerCase() === "active"
+  );
 }
 
 export function trackingPurposeLabel(value?: string | null): string {

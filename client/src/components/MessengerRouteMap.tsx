@@ -31,6 +31,8 @@ export type MessengerRouteMapProps = {
   service: BackendService;
   messengerPosition: LatLng | null;
   className?: string;
+  mapClassName?: string;
+  hideLegend?: boolean;
 };
 
 function isGoogleMapsApiAvailable(): boolean {
@@ -239,6 +241,8 @@ export function MessengerRouteMap({
   service,
   messengerPosition,
   className,
+  mapClassName,
+  hideLegend = false,
 }: MessengerRouteMapProps) {
   const pickup = parseServiceRouteCoords(service, "origin");
   const delivery = parseServiceRouteCoords(service, "destination");
@@ -319,17 +323,22 @@ export function MessengerRouteMap({
         <MapLoadFallback />
       ) : (
         <MapView
-          className="h-48 w-full rounded-xl overflow-hidden border border-slate-200/80"
+          className={cn(
+            "h-48 w-full rounded-xl overflow-hidden border border-slate-200/80",
+            mapClassName,
+          )}
           initialCenter={initialCenter}
           initialZoom={14}
           onMapReady={handleMapReady}
         />
       )}
-      <RouteMapLegend
-        showMessenger={messengerPosition != null}
-        showPickup={pickup != null}
-        showDelivery={delivery != null}
-      />
+      {!hideLegend ? (
+        <RouteMapLegend
+          showMessenger={messengerPosition != null}
+          showPickup={pickup != null}
+          showDelivery={delivery != null}
+        />
+      ) : null}
     </div>
   );
 }
