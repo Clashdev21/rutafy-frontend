@@ -1,11 +1,22 @@
 import type { OperationalControlContainerRow } from "@/api/operational-control";
 import type {
+  OperationalCdrElapsed,
   OperationalDigitalTwin,
+  OperationalInsidePortElapsed,
   OperationalJourneyPhase,
   OperationalRouteNode,
+  OperationalStationaryTime,
 } from "@/api/operational-digital-twin";
 import { resolveEtaDisplay, resolveOperationalStateLabel } from "@/lib/operationalControlDisplay";
 import { deriveRiskBand, type RiskBand } from "@/lib/operationalControlUx";
+import {
+  isAtGatePhase,
+  isPortIngressPhase,
+  journeyLiveToPhases,
+  journeyTrackingModeLabel,
+  resolveOperationalPhaseLabel,
+  resolveTechnicalGpsStatus,
+} from "@/lib/operationalTwinContract";
 
 export type RiskPresentation = {
   band: RiskBand;
@@ -34,7 +45,17 @@ export type ContainerLiveState = {
   row: OperationalControlContainerRow;
   twin: OperationalDigitalTwin | null;
   progressPercent: number;
+  /** Microestado operacional (current_phase_label). */
   phaseLabel: string;
+  /** Código micro (current_phase), p.ej. AT_GATE. */
+  operationalPhaseCode: string | null;
+  /** Lifecycle macro del Journey (journey_current_state). Nunca colapsar con phase. */
+  journeyState: string | null;
+  journeyCurrentLeg: number | null;
+  journeyCorridorCode: string | null;
+  journeyTrackingMode: string | null;
+  journeyTrackingModeLabel: string | null;
+  /** @deprecated alias de phaseLabel para compat; no usar como macro. */
   stateLabel: string;
   locationLabel: string;
   currentNodeName: string;
@@ -49,6 +70,10 @@ export type ContainerLiveState = {
   journeyPhases: JourneyPhaseUi[];
   routeNodes: RouteNodeUi[];
   timeline: Array<{ at?: string | null; title: string; detail?: string | null }>;
+  technicalGpsStatus: string | null;
+  insidePortElapsed: OperationalInsidePortElapsed | null;
+  cdrElapsed: OperationalCdrElapsed | null;
+  stationaryTime: OperationalStationaryTime | null;
   heartbeatKey: string;
 };
 
@@ -164,14 +189,27 @@ export function resolveRiskPresentation(
 }
 
 function derivePhaseLabel(twin: OperationalDigitalTwin | null, row: OperationalControlContainerRow): string {
-  const label =
-    twin?.current_phase_label?.trim() ||
-    twin?.current_phase?.trim() ||
-    resolveOperationalStateLabel(row);
-  return label.toUpperCase();
+  if (twin?.current_phase || twin?.current_phase_label) {
+    return resolveOperationalPhaseLabel(twin.current_phase, twin.current_phase_label).toUpperCase();
+  }
+  return resolveOperationalStateLabel(row).toUpperCase();
 }
 
-function deriveJourneyPhases(percent: number, phases?: OperationalJourneyPhase[]): JourneyPhaseUi[] {
+function deriveJourneyPhases(
+  percent: number,
+  twin: OperationalDigitalTwin | null,
+  phases?: OperationalJourneyPhase[],
+): JourneyPhaseUi[] {
+  const fromLive = journeyLiveToPhases(twin?.journey_live);
+  if (fromLive.length > 0) {
+    return fromLive.map((p) => ({
+      key: p.key,
+      label: p.label,
+      completed: Boolean(p.completed),
+      current: Boolean(p.current),
+    }));
+  }
+
   if (phases && phases.length > 0) {
     return phases.map((p) => ({
       key: p.key,
@@ -258,8 +296,10 @@ export function buildContainerLiveState(
   );
 
   const currentNodeName = humanizeNodeName(
-    twin?.current_node_label ||
+    twin?.current_location?.name ||
+      twin?.current_node_label ||
       twin?.observed_truth.current_node_code ||
+      twin?.current_location?.node_code ||
       twin?.journey_progress?.current_step ||
       row.declared_port,
   );
@@ -284,9 +324,10 @@ export function buildContainerLiveState(
     { detailEta: twin?.eta },
   );
 
+  const technicalGps = resolveTechnicalGpsStatus(twin);
   const etaSource: ContainerLiveState["etaSource"] = twin?.eta
     ? "ia"
-    : row.gps_status?.toUpperCase() === "ONLINE"
+    : technicalGps?.toUpperCase() === "ONLINE" || row.gps_status?.toUpperCase() === "ONLINE"
       ? "gps"
       : "programacion";
 
@@ -295,8 +336,17 @@ export function buildContainerLiveState(
     minutesUntil(twin?.next_expected_step?.eta ?? twin?.eta) ||
     minutesUntil(etaIso);
 
+  const phaseLabel = derivePhaseLabel(twin, row);
+  const operationalPhaseCode = twin?.current_phase?.trim() || null;
+  const journeyState = twin?.journey_current_state?.trim() || null;
+  const journeyTrackingMode = twin?.journey_tracking_mode
+    ? String(twin.journey_tracking_mode).trim()
+    : null;
+
   const heartbeatKey = [
     progressPercent,
+    phaseLabel,
+    journeyState,
     currentNodeName,
     nextNodeName,
     etaHeroFromDisplay(etaDisplay.timeLabel, etaIso),
@@ -309,8 +359,17 @@ export function buildContainerLiveState(
     row,
     twin,
     progressPercent,
-    phaseLabel: derivePhaseLabel(twin, row),
-    stateLabel: derivePhaseLabel(twin, row),
+    phaseLabel,
+    operationalPhaseCode,
+    journeyState,
+    journeyCurrentLeg:
+      twin?.journey_current_leg != null && Number.isFinite(twin.journey_current_leg)
+        ? twin.journey_current_leg
+        : null,
+    journeyCorridorCode: twin?.journey_corridor_code?.trim() || null,
+    journeyTrackingMode,
+    journeyTrackingModeLabel: journeyTrackingModeLabel(journeyTrackingMode),
+    stateLabel: phaseLabel,
     locationLabel: `${currentNodeName} → ${nextNodeName}`,
     currentNodeName,
     nextNodeName,
@@ -319,13 +378,17 @@ export function buildContainerLiveState(
     etaSubLabel: etaDisplay.subLabel || (etaSource === "ia" ? "estimado" : ""),
     etaExpired: etaDisplay.isExpired,
     etaSource,
-    corridorName: twin?.corridor_name ?? null,
+    corridorName: twin?.corridor_name ?? twin?.journey_corridor_code ?? null,
     risk: resolveRiskPresentation(row, twin),
-    journeyPhases: deriveJourneyPhases(progressPercent, twin?.journey_phases),
+    journeyPhases: deriveJourneyPhases(progressPercent, twin, twin?.journey_phases),
     routeNodes: deriveRouteNodes(twin, row),
     timeline: twin?.timeline?.length
       ? twin.timeline.map((e) => ({ at: e.at, title: e.title, detail: e.detail }))
       : [],
+    technicalGpsStatus: technicalGps,
+    insidePortElapsed: twin?.inside_port_elapsed ?? null,
+    cdrElapsed: twin?.cdr_elapsed ?? null,
+    stationaryTime: twin?.stationary_time ?? null,
     heartbeatKey,
   };
 }
@@ -369,7 +432,12 @@ export function computeTowerKpis(states: ContainerLiveState[], activeCount: numb
 
   for (const s of states) {
     const phase = s.phaseLabel;
-    if (/PUERTO|PORT|SPIA|SPB|TCBUEN/i.test(phase) || s.twin?.observed_truth.inside_port) {
+    if (
+      isAtGatePhase(s.operationalPhaseCode) ||
+      isPortIngressPhase(s.operationalPhaseCode) ||
+      /PUERTO|PORT|SPIA|SPB|TCBUEN|INGRESO/i.test(phase) ||
+      s.twin?.observed_truth.inside_port
+    ) {
       inPort += 1;
     } else if (/TRÁNSITO|TRANSITO|RUTA|VIJES|CORREDOR/i.test(phase)) {
       inTransit += 1;
@@ -401,7 +469,12 @@ export function computeTowerKpis(states: ContainerLiveState[], activeCount: numb
 }
 
 export function isInPortState(s: ContainerLiveState): boolean {
-  return /PUERTO|PORT|SPIA|SPB/i.test(s.phaseLabel) || Boolean(s.twin?.observed_truth.inside_port);
+  return (
+    isAtGatePhase(s.operationalPhaseCode) ||
+    isPortIngressPhase(s.operationalPhaseCode) ||
+    /PUERTO|PORT|SPIA|SPB|INGRESO/i.test(s.phaseLabel) ||
+    Boolean(s.twin?.observed_truth.inside_port)
+  );
 }
 
 export function isInTransitState(s: ContainerLiveState): boolean {

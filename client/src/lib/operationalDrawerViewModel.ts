@@ -1,7 +1,12 @@
 import type { OperationalControlContainerDetail } from "@/api/operational-control";
 import type { OperationalControlContainerRow } from "@/api/operational-control";
 import type { OperationalControlMapData } from "@/api/operational-control";
-import type { OperationalDigitalTwin } from "@/api/operational-digital-twin";
+import type {
+  OperationalCdrElapsed,
+  OperationalDigitalTwin,
+  OperationalInsidePortElapsed,
+  OperationalStationaryTime,
+} from "@/api/operational-digital-twin";
 import {
   formatDestinationLabel,
   resolveDestinationLabel,
@@ -15,6 +20,12 @@ import {
   type RiskPresentation,
   type RouteNodeUi,
 } from "@/lib/operationalTwinUx";
+import {
+  journeyTrackingModeLabel,
+  resolveDriverIdentity,
+  resolveOperationalPhaseLabel,
+  resolveTechnicalGpsStatus,
+} from "@/lib/operationalTwinContract";
 
 export type OperationalDrawerSource = "digital_twin" | "legacy" | "row_fallback";
 
@@ -24,11 +35,24 @@ export type OperationalDrawerViewModel = {
   container_label?: string | null;
   client_name?: string | null;
   program_name?: string | null;
+  /** Microestado visible (current_phase_label). */
   current_phase_label?: string | null;
+  /** Código micro (current_phase), p.ej. AT_GATE. */
+  operational_phase?: string | null;
+  /** Lifecycle macro (journey_current_state), p.ej. TRACKING_STARTED. */
+  journey_state?: string | null;
+  journey_current_leg?: number | null;
+  journey_corridor_code?: string | null;
+  journey_tracking_mode?: string | null;
+  journey_tracking_mode_label?: string | null;
   risk_level?: string | null;
   driver_name?: string | null;
   plate?: string | null;
+  driver_phone?: string | null;
+  driver_messenger_id?: string | null;
+  driver_vehicle_type?: string | null;
   gps_status?: string | null;
+  technical_gps_status?: string | null;
   gps_last_seen_at?: string | null;
   journey_progress_percent?: number | null;
   current_step?: string | null;
@@ -41,16 +65,20 @@ export type OperationalDrawerViewModel = {
     scheduled_at?: string | null;
     driver_name?: string | null;
     plate?: string | null;
+    status_raw?: string | null;
   };
   observed_truth: {
     last_event_type?: string | null;
+    last_operational_event_type?: string | null;
     last_event_at?: string | null;
     current_node_code?: string | null;
     inside_port?: boolean | null;
     loading_inferred?: boolean | null;
     confirmed_port?: string | null;
     movement_status?: string | null;
+    monitoring_status?: string | null;
     gps_status?: string | null;
+    technical_gps_status?: string | null;
   };
   inferred_truth: {
     loading_probability?: number | null;
@@ -58,7 +86,22 @@ export type OperationalDrawerViewModel = {
     expected_arrival_cdr?: string | null;
     next_expected_event?: string | null;
   };
+  current_location?: {
+    node_code?: string | null;
+    name?: string | null;
+    lat?: number | null;
+    lng?: number | null;
+  } | null;
+  inside_port_elapsed?: OperationalInsidePortElapsed | null;
+  cdr_elapsed?: OperationalCdrElapsed | null;
+  stationary_time?: OperationalStationaryTime | null;
   timeline: Array<{ title: string; at?: string | null; detail?: string | null }>;
+  timeline_summary?: Array<{
+    key?: string | null;
+    label?: string | null;
+    at?: string | null;
+    status?: string | null;
+  }>;
   alerts: string[];
   map: OperationalControlMapData;
   history: Array<{ title: string; at?: string | null; status?: string | null }>;
@@ -116,19 +159,38 @@ export function buildDrawerViewFromDigitalTwin(
   row?: OperationalControlContainerRow | null,
 ): OperationalDrawerViewModel {
   const live = row ? buildContainerLiveState(row, twin) : null;
+  const driver = resolveDriverIdentity(twin);
+  const technicalGps = resolveTechnicalGpsStatus(twin);
   const vm: OperationalDrawerViewModel = {
     source: "digital_twin",
     container_id: twin.container_id,
     container_label: twin.container_label,
     client_name: twin.client_name,
     program_name: twin.program_code ?? row?.program_name,
-    current_phase_label:
-      twin.current_phase_label?.trim() || twin.current_phase?.trim() || null,
+    current_phase_label: resolveOperationalPhaseLabel(
+      twin.current_phase,
+      twin.current_phase_label,
+    ),
+    operational_phase: twin.current_phase?.trim() || null,
+    journey_state: twin.journey_current_state?.trim() || null,
+    journey_current_leg:
+      twin.journey_current_leg != null && Number.isFinite(twin.journey_current_leg)
+        ? twin.journey_current_leg
+        : null,
+    journey_corridor_code: twin.journey_corridor_code?.trim() || null,
+    journey_tracking_mode: twin.journey_tracking_mode
+      ? String(twin.journey_tracking_mode)
+      : null,
+    journey_tracking_mode_label: journeyTrackingModeLabel(twin.journey_tracking_mode),
     risk_level: twin.risk?.level ?? null,
-    driver_name: twin.driver?.name ?? twin.declared_truth.driver_name,
-    plate: twin.driver?.plate ?? twin.declared_truth.plate,
+    driver_name: driver.name,
+    plate: driver.plate,
+    driver_phone: driver.phone,
+    driver_messenger_id: driver.messenger_id,
+    driver_vehicle_type: driver.vehicle_type,
     gps_status: twin.gps_status,
-    gps_last_seen_at: twin.gps_last_seen_at,
+    technical_gps_status: technicalGps,
+    gps_last_seen_at: twin.gps_last_seen_at ?? driver.last_location_at,
     journey_progress_percent: twin.journey_progress?.percent ?? null,
     current_step: twin.journey_progress?.current_step ?? null,
     next_step: twin.journey_progress?.next_step ?? null,
@@ -140,19 +202,28 @@ export function buildDrawerViewFromDigitalTwin(
     declared_truth: { ...twin.declared_truth },
     observed_truth: { ...twin.observed_truth },
     inferred_truth: { ...twin.inferred_truth },
+    current_location: twin.current_location ?? null,
+    inside_port_elapsed: twin.inside_port_elapsed ?? null,
+    cdr_elapsed: twin.cdr_elapsed ?? null,
+    stationary_time: twin.stationary_time ?? null,
     timeline: twin.timeline.map((ev) => ({
       title: ev.title,
       at: ev.at,
       detail: ev.detail,
     })),
+    timeline_summary: twin.timeline_summary,
     alerts: [
       ...twin.alerts,
       ...(twin.risk?.reasons ?? []).filter((r) => !twin.alerts.includes(r)),
     ],
     map: twin.map,
     history: [],
-    corridor_name: twin.corridor_name ?? live?.corridorName,
-    current_node_label: live?.currentNodeName ?? twin.current_node_label,
+    corridor_name:
+      twin.corridor_name ?? twin.journey_corridor_code ?? live?.corridorName,
+    current_node_label:
+      live?.currentNodeName ??
+      twin.current_location?.name ??
+      twin.current_node_label,
     next_node_label: live?.nextNodeName ?? twin.next_node_label,
     minutes_to_next: live?.minutesToNext ?? null,
     route_nodes: live?.routeNodes ?? [],

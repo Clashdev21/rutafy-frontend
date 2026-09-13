@@ -8,14 +8,19 @@ export type OperationalDigitalTwinDeclaredTruth = {
   scheduled_at?: string | null;
   driver_name?: string | null;
   plate?: string | null;
+  status_raw?: string | null;
 };
 
 export type OperationalDigitalTwinObservedTruth = {
   last_event_type?: string | null;
+  last_operational_event_type?: string | null;
   last_event_at?: string | null;
   current_node_code?: string | null;
   inside_port?: boolean | null;
   loading_inferred?: boolean | null;
+  monitoring_status?: string | null;
+  gps_status?: string | null;
+  technical_gps_status?: string | null;
 };
 
 export type OperationalDigitalTwinInferredTruth = {
@@ -23,6 +28,49 @@ export type OperationalDigitalTwinInferredTruth = {
   expected_exit_port_at?: string | null;
   expected_arrival_cdr?: string | null;
   next_expected_event?: string | null;
+};
+
+export type OperationalDigitalTwinCurrentLocation = {
+  node_code?: string | null;
+  name?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+};
+
+export type JourneyTrackingMode = "EMAIL_ONLY" | "HYBRID" | "TELEMETRY";
+
+export type OperationalDigitalTwinJourneyLiveStep = {
+  step: string;
+  status?: string | null;
+};
+
+export type OperationalDigitalTwinTimelineSummaryItem = {
+  key?: string | null;
+  label?: string | null;
+  at?: string | null;
+  status?: string | null;
+};
+
+/** Canonical backend elapsed for time inside port. */
+export type OperationalInsidePortElapsed = {
+  minutes: number | null;
+  label: string | null;
+  source: string | null;
+};
+
+/** Canonical backend elapsed for CDR stay. */
+export type OperationalCdrElapsed = {
+  status: string | null;
+  minutes: number | null;
+  label: string | null;
+  arrived_at: string | null;
+  exited_at: string | null;
+};
+
+/** Canonical backend stationary duration. */
+export type OperationalStationaryTime = {
+  minutes: number | null;
+  label: string | null;
 };
 
 export type OperationalDigitalTwinJourneyProgress = {
@@ -60,9 +108,13 @@ export type OperationalDigitalTwinRisk = {
 };
 
 export type OperationalDigitalTwinDriver = {
+  messenger_id?: string | null;
   name?: string | null;
   plate?: string | null;
   phone?: string | null;
+  vehicle_type?: string | null;
+  gps_status?: string | null;
+  last_location_at?: string | null;
   doc_id?: string | null;
   assignment_state?: string | null;
 };
@@ -81,6 +133,12 @@ export type OperationalDigitalTwin = {
   client_name?: string | null;
   current_phase?: string | null;
   current_phase_label?: string | null;
+  current_location?: OperationalDigitalTwinCurrentLocation | null;
+  journey_current_state?: string | null;
+  journey_current_leg?: number | null;
+  journey_corridor_code?: string | null;
+  journey_tracking_mode?: JourneyTrackingMode | string | null;
+  journey_live?: OperationalDigitalTwinJourneyLiveStep[];
   journey_progress?: OperationalDigitalTwinJourneyProgress | null;
   next_expected_step?: OperationalDigitalTwinNextStep | null;
   eta?: string | null;
@@ -89,8 +147,12 @@ export type OperationalDigitalTwin = {
   observed_truth: OperationalDigitalTwinObservedTruth;
   inferred_truth: OperationalDigitalTwinInferredTruth;
   durations?: Record<string, unknown> | null;
+  inside_port_elapsed?: OperationalInsidePortElapsed | null;
+  cdr_elapsed?: OperationalCdrElapsed | null;
+  stationary_time?: OperationalStationaryTime | null;
   driver?: OperationalDigitalTwinDriver | null;
   timeline: OperationalDigitalTwinTimelineEvent[];
+  timeline_summary?: OperationalDigitalTwinTimelineSummaryItem[];
   alerts: string[];
   map: OperationalControlMapData;
   gps_status?: string | null;
@@ -243,6 +305,7 @@ function normalizeDeclaredTruth(raw: unknown): OperationalDigitalTwinDeclaredTru
     driver_name: pick(rec, "driver_name", toOptionalString),
     plate:
       pick(rec, "plate", toOptionalString) ?? pick(rec, "driver_plate", toOptionalString),
+    status_raw: pick(rec, "status_raw", toOptionalString),
   };
 }
 
@@ -253,6 +316,7 @@ function normalizeObservedTruth(raw: unknown): OperationalDigitalTwinObservedTru
     last_event_type:
       pick(rec, "last_event_type", toOptionalString) ??
       pick(rec, "event_type", toOptionalString),
+    last_operational_event_type: pick(rec, "last_operational_event_type", toOptionalString),
     last_event_at:
       pick(rec, "last_event_at", toOptionalString) ??
       pick(rec, "occurred_at", toOptionalString),
@@ -261,6 +325,9 @@ function normalizeObservedTruth(raw: unknown): OperationalDigitalTwinObservedTru
       pick(rec, "node_code", toOptionalString),
     inside_port: pick(rec, "inside_port", toOptionalBoolean),
     loading_inferred: pick(rec, "loading_inferred", toOptionalBoolean),
+    monitoring_status: pick(rec, "monitoring_status", toOptionalString),
+    gps_status: pick(rec, "gps_status", toOptionalString),
+    technical_gps_status: pick(rec, "technical_gps_status", toOptionalString),
   };
 }
 
@@ -356,16 +423,142 @@ function normalizeDriver(raw: unknown): OperationalDigitalTwinDriver | null {
   if (!rec) return null;
   const name = pick(rec, "name", toOptionalString) ?? pick(rec, "driver_name", toOptionalString);
   const plate = pick(rec, "plate", toOptionalString);
-  if (!name && !plate) return null;
+  const messenger_id =
+    pick(rec, "messenger_id", toOptionalString) ?? pick(rec, "mensajero_id", toOptionalString);
+  if (!name && !plate && !messenger_id) return null;
   return {
+    messenger_id,
     name,
     plate,
     phone: pick(rec, "phone", toOptionalString),
+    vehicle_type: pick(rec, "vehicle_type", toOptionalString),
+    gps_status: pick(rec, "gps_status", toOptionalString),
+    last_location_at: pick(rec, "last_location_at", toOptionalString),
     doc_id:
       pick(rec, "doc_id", toOptionalString) ??
       pick(rec, "driver_doc_id", toOptionalString),
     assignment_state: pick(rec, "assignment_state", toOptionalString),
   };
+}
+
+function normalizeCurrentLocation(raw: unknown): OperationalDigitalTwinCurrentLocation | null {
+  const rec = asRecord(raw);
+  if (!rec) return null;
+  const node_code =
+    pick(rec, "node_code", toOptionalString) ?? pick(rec, "code", toOptionalString);
+  const name =
+    pick(rec, "name", toOptionalString) ?? pick(rec, "label", toOptionalString);
+  const lat = pick(rec, "lat", toFiniteNumber);
+  const lng = pick(rec, "lng", toFiniteNumber);
+  if (!node_code && !name && lat == null && lng == null) return null;
+  return { node_code, name, lat, lng };
+}
+
+function normalizeJourneyTrackingMode(raw: unknown): JourneyTrackingMode | string | null {
+  const s = toOptionalString(raw);
+  if (!s) return null;
+  const key = s.toUpperCase().replace(/[\s-]+/g, "_");
+  if (key === "EMAIL_ONLY" || key === "HYBRID" || key === "TELEMETRY") return key;
+  return s;
+}
+
+function normalizeJourneyLive(raw: unknown): OperationalDigitalTwinJourneyLiveStep[] {
+  if (!Array.isArray(raw)) return [];
+  const out: OperationalDigitalTwinJourneyLiveStep[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const step =
+      pick(rec, "step", toOptionalString) ??
+      pick(rec, "key", toOptionalString) ??
+      pick(rec, "id", toOptionalString) ??
+      pick(rec, "label", toOptionalString);
+    if (!step) continue;
+    out.push({
+      step,
+      status: pick(rec, "status", toOptionalString) ?? pick(rec, "state", toOptionalString),
+    });
+  }
+  return out;
+}
+
+function normalizeTimelineSummary(raw: unknown): OperationalDigitalTwinTimelineSummaryItem[] {
+  if (!Array.isArray(raw)) return [];
+  const out: OperationalDigitalTwinTimelineSummaryItem[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const label =
+      pick(rec, "label", toOptionalString) ??
+      pick(rec, "title", toOptionalString) ??
+      pick(rec, "step", toOptionalString);
+    const key = pick(rec, "key", toOptionalString) ?? pick(rec, "id", toOptionalString);
+    if (!label && !key) continue;
+    out.push({
+      key,
+      label: label ?? key,
+      at: pick(rec, "at", toOptionalString) ?? pick(rec, "occurred_at", toOptionalString),
+      status: pick(rec, "status", toOptionalString),
+    });
+  }
+  return out;
+}
+
+function normalizeInsidePortElapsed(raw: unknown): OperationalInsidePortElapsed | null {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return { minutes: raw, label: null, source: null };
+  }
+  const rec = asRecord(raw);
+  if (!rec) return null;
+  return {
+    minutes: pick(rec, "minutes", toFiniteNumber),
+    label: pick(rec, "label", toOptionalString),
+    source: pick(rec, "source", toOptionalString),
+  };
+}
+
+function normalizeCdrElapsed(raw: unknown): OperationalCdrElapsed | null {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return {
+      status: null,
+      minutes: raw,
+      label: null,
+      arrived_at: null,
+      exited_at: null,
+    };
+  }
+  const rec = asRecord(raw);
+  if (!rec) return null;
+  return {
+    status: pick(rec, "status", toOptionalString),
+    minutes: pick(rec, "minutes", toFiniteNumber),
+    label: pick(rec, "label", toOptionalString),
+    arrived_at: pick(rec, "arrived_at", toOptionalString),
+    exited_at: pick(rec, "exited_at", toOptionalString),
+  };
+}
+
+function normalizeStationaryTime(raw: unknown): OperationalStationaryTime | null {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return { minutes: raw, label: null };
+  }
+  const rec = asRecord(raw);
+  if (!rec) return null;
+  return {
+    minutes: pick(rec, "minutes", toFiniteNumber),
+    label: pick(rec, "label", toOptionalString),
+  };
+}
+
+function pickElapsedFromDurations(
+  durations: Record<string, unknown> | null,
+  key: string,
+): unknown {
+  if (!durations) return null;
+  return durations[key] ?? durations[key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())];
 }
 
 function normalizeTimeline(raw: unknown): OperationalDigitalTwinTimelineEvent[] {
@@ -408,6 +601,12 @@ export function normalizeOperationalDigitalTwin(raw: unknown): OperationalDigita
     asRecord(root.route)?.nodes ??
     asRecord(root.corridor)?.nodes ??
     asRecord(root.journey)?.nodes;
+  const durations = asRecord(root.durations);
+  const journeyLiveRaw =
+    root.journey_live ??
+    root.journeyLive ??
+    asRecord(root.journey)?.live ??
+    asRecord(root.journey)?.steps;
 
   return {
     container_id,
@@ -420,6 +619,25 @@ export function normalizeOperationalDigitalTwin(raw: unknown): OperationalDigita
     current_phase_label:
       pick(root, "current_phase_label", toOptionalString) ??
       pick(root, "phase_label", toOptionalString),
+    current_location: normalizeCurrentLocation(
+      root.current_location ?? root.currentLocation,
+    ),
+    journey_current_state:
+      pick(root, "journey_current_state", toOptionalString) ??
+      pick(asRecord(root.journey) ?? {}, "current_state", toOptionalString),
+    journey_current_leg:
+      pick(root, "journey_current_leg", toFiniteNumber) ??
+      pick(asRecord(root.journey) ?? {}, "current_leg", toFiniteNumber),
+    journey_corridor_code:
+      pick(root, "journey_corridor_code", toOptionalString) ??
+      pick(asRecord(root.journey) ?? {}, "corridor_code", toOptionalString) ??
+      pick(asRecord(root.corridor) ?? {}, "code", toOptionalString),
+    journey_tracking_mode: normalizeJourneyTrackingMode(
+      root.journey_tracking_mode ??
+        root.journeyTrackingMode ??
+        asRecord(root.journey)?.tracking_mode,
+    ),
+    journey_live: normalizeJourneyLive(journeyLiveRaw),
     journey_progress: normalizeJourneyProgress(journeyRaw),
     next_expected_step: normalizeNextStep(nextStepRaw),
     eta: pick(root, "eta", toOptionalString) ?? pick(root, "eta_at", toOptionalString),
@@ -427,9 +645,27 @@ export function normalizeOperationalDigitalTwin(raw: unknown): OperationalDigita
     declared_truth: normalizeDeclaredTruth(root.declared_truth ?? root.declaredTruth),
     observed_truth: normalizeObservedTruth(root.observed_truth ?? root.observedTruth),
     inferred_truth: normalizeInferredTruth(root.inferred_truth ?? root.inferredTruth),
-    durations: asRecord(root.durations),
+    durations,
+    inside_port_elapsed: normalizeInsidePortElapsed(
+      root.inside_port_elapsed ??
+        root.insidePortElapsed ??
+        pickElapsedFromDurations(durations, "inside_port_elapsed"),
+    ),
+    cdr_elapsed: normalizeCdrElapsed(
+      root.cdr_elapsed ??
+        root.cdrElapsed ??
+        pickElapsedFromDurations(durations, "cdr_elapsed"),
+    ),
+    stationary_time: normalizeStationaryTime(
+      root.stationary_time ??
+        root.stationaryTime ??
+        pickElapsedFromDurations(durations, "stationary_time"),
+    ),
     driver: normalizeDriver(root.driver),
     timeline: normalizeTimeline(root.timeline),
+    timeline_summary: normalizeTimelineSummary(
+      root.timeline_summary ?? root.timelineSummary,
+    ),
     alerts: normalizeAlerts(root.alerts),
     map: normalizeMapData(root.map),
     gps_status: pick(root, "gps_status", toOptionalString),

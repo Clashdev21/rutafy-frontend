@@ -32,6 +32,13 @@ import {
   formatProbability,
   type OperationalDrawerViewModel,
 } from "@/lib/operationalDrawerViewModel";
+import {
+  journeyTrackingModeLabel,
+  resolveDriverIdentity,
+  resolveElapsedLabel,
+  resolveOperationalPhaseLabel,
+  resolveTechnicalGpsStatus,
+} from "@/lib/operationalTwinContract";
 import { TIMELINE_OPERATION_STEPS } from "@/lib/operationalControlUx";
 import { AlertTriangle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -190,17 +197,118 @@ export function OperationalControlDrawer({
                       expired={view.eta_display.isExpired}
                     />
                   </div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
-                    {view.current_phase_label?.toUpperCase() ?? "SIN ESTADO"}
-                  </p>
+                  <div className="space-y-1">
+                    <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                      Estado operacional
+                    </p>
+                    <p className="text-sm font-semibold text-[#1E3A5F]">
+                      {view.current_phase_label?.trim() || "Sin estado"}
+                    </p>
+                    {view.operational_phase ? (
+                      <p className="text-[11px] font-mono text-gray-400">
+                        Micro: {view.operational_phase}
+                      </p>
+                    ) : null}
+                  </div>
+                  {(view.journey_state ||
+                    view.journey_current_leg != null ||
+                    view.journey_tracking_mode_label ||
+                    view.journey_corridor_code) && (
+                    <div className="rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2.5 space-y-1.5 text-sm">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                        Journey
+                      </p>
+                      {view.journey_state ? (
+                        <p>
+                          <span className="text-gray-500">Estado: </span>
+                          <span className="font-mono font-medium text-[#1E3A5F]">
+                            {view.journey_state}
+                          </span>
+                        </p>
+                      ) : null}
+                      {view.journey_current_leg != null ? (
+                        <p>
+                          <span className="text-gray-500">Leg: </span>
+                          <span className="font-medium tabular-nums">{view.journey_current_leg}</span>
+                        </p>
+                      ) : null}
+                      {view.journey_corridor_code ? (
+                        <p>
+                          <span className="text-gray-500">Corredor: </span>
+                          <span className="font-mono text-xs">{view.journey_corridor_code}</span>
+                        </p>
+                      ) : null}
+                      {view.journey_tracking_mode_label ? (
+                        <p>
+                          <span className="text-gray-500">Tracking: </span>
+                          <span className="font-medium">{view.journey_tracking_mode_label}</span>
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
                   <OperationalRiskLive risk={view.risk_presentation} />
                   <div className="grid grid-cols-2 gap-3 text-sm border-t pt-3">
-                    <Field label="GPS" value={gpsStatusDisplay(view.gps_status)} />
+                    <Field
+                      label="GPS técnico"
+                      value={gpsStatusDisplay(
+                        view.technical_gps_status ?? view.gps_status,
+                      )}
+                    />
                     <Field
                       label="Última señal"
                       value={formatGpsAge(view.gps_last_seen_at) || "Sin señal reciente"}
                     />
+                    {view.driver_name ? (
+                      <Field label="Conductor" value={view.driver_name} />
+                    ) : null}
+                    {view.plate ? <Field label="Placa" value={view.plate} /> : null}
+                    {view.driver_phone ? (
+                      <Field label="Teléfono" value={view.driver_phone} />
+                    ) : null}
+                    {view.driver_vehicle_type ? (
+                      <Field label="Vehículo" value={view.driver_vehicle_type} />
+                    ) : null}
                   </div>
+                  {(resolveElapsedLabel(view.inside_port_elapsed) ||
+                    resolveElapsedLabel(view.cdr_elapsed) ||
+                    resolveElapsedLabel(view.stationary_time)) && (
+                    <div className="grid grid-cols-3 gap-2 rounded-lg border border-gray-100 px-3 py-2 text-xs">
+                      {resolveElapsedLabel(view.inside_port_elapsed) ? (
+                        <div>
+                          <p className="text-gray-500">En puerto</p>
+                          <p className="font-semibold tabular-nums">
+                            {resolveElapsedLabel(view.inside_port_elapsed)}
+                          </p>
+                        </div>
+                      ) : null}
+                      {resolveElapsedLabel(view.cdr_elapsed) ? (
+                        <div>
+                          <p className="text-gray-500">En CDR</p>
+                          <p className="font-semibold tabular-nums">
+                            {resolveElapsedLabel(view.cdr_elapsed)}
+                          </p>
+                        </div>
+                      ) : null}
+                      {resolveElapsedLabel(view.stationary_time) ? (
+                        <div>
+                          <p className="text-gray-500">Estático</p>
+                          <p className="font-semibold tabular-nums">
+                            {resolveElapsedLabel(view.stationary_time)}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                  {view.current_location?.name || view.current_location?.node_code ? (
+                    <p className="text-xs text-gray-500">
+                      Ubicación:{" "}
+                      <span className="font-medium text-gray-800">
+                        {[view.current_location.name, view.current_location.node_code]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                    </p>
+                  ) : null}
                 </TabsContent>
 
                 <TabsContent value="ruta" className="mt-4">
@@ -229,7 +337,11 @@ export function OperationalControlDrawer({
                 </TabsContent>
 
                 <TabsContent value="mapa" className="mt-4">
-                  <OperationalControlDrawerMap map={view.map} className="h-96" />
+                  <OperationalControlDrawerMap
+                    map={view.map}
+                    currentLocation={view.current_location}
+                    className="h-96"
+                  />
                 </TabsContent>
 
                 <TabsContent value="auditoria" className="mt-4 space-y-6">
@@ -247,11 +359,32 @@ export function OperationalControlDrawer({
                     <h3 className="text-sm font-semibold text-[#1E3A5F]">Verdad observada</h3>
                     <div className="grid grid-cols-2 gap-3">
                       <Field label="Último evento" value={view.observed_truth.last_event_type?.trim() || "Sin evento"} />
+                      <Field
+                        label="Evento operacional"
+                        value={
+                          view.observed_truth.last_operational_event_type?.trim() ||
+                          "Sin evento"
+                        }
+                      />
                       <Field label="Hora" value={formatTimeLabel(view.observed_truth.last_event_at)} />
                       <Field label="Nodo actual" value={view.observed_truth.current_node_code?.trim() || view.current_node_label || "Sin nodo"} />
                       <Field label="Dentro del puerto" value={formatBooleanLabel(view.observed_truth.inside_port)} />
                       <Field label="Carga inferida" value={formatBooleanLabel(view.observed_truth.loading_inferred)} />
-                      <Field label="GPS" value={gpsStatusDisplay(view.observed_truth.gps_status ?? view.gps_status)} />
+                      <Field
+                        label="GPS técnico"
+                        value={gpsStatusDisplay(
+                          view.observed_truth.technical_gps_status ??
+                            view.technical_gps_status ??
+                            view.observed_truth.gps_status ??
+                            view.gps_status,
+                        )}
+                      />
+                      {view.observed_truth.monitoring_status ? (
+                        <Field
+                          label="Monitoreo"
+                          value={view.observed_truth.monitoring_status}
+                        />
+                      ) : null}
                     </div>
                   </section>
                   <section className="space-y-3">

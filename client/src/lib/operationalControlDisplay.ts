@@ -29,6 +29,7 @@ const OPERATIONAL_STATE_LABELS: Record<string, string> = {
   ESPERANDO_MOVIMIENTO: "Esperando movimiento",
   WAITING_MOVEMENT: "Esperando movimiento",
   EN_PUERTO: "En puerto",
+  AT_GATE: "En ingreso al puerto",
   FINALIZADO: "Finalizado",
   COMPLETED: "Completado",
   ALERTA: "Alerta",

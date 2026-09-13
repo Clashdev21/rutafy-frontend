@@ -1,7 +1,9 @@
 /// <reference types="@types/google.maps" />
 
 import type { OperationalControlMapData } from "@/api/operational-control";
+import type { OperationalDigitalTwinCurrentLocation } from "@/api/operational-digital-twin";
 import { MapView } from "@/components/Map";
+import { resolveOperationalMapMarker } from "@/lib/operationalTwinContract";
 import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useRef } from "react";
 
@@ -11,9 +13,11 @@ const COLOR_DECLARED = "#eab308";
 const COLOR_CONFIRMED = "#16a34a";
 const COLOR_DEST = "#1e3a5f";
 const COLOR_ROUTE = "#2A9D8F";
+const COLOR_CURRENT = "#0ea5e9";
 
 type Props = {
   map: OperationalControlMapData | null;
+  currentLocation?: OperationalDigitalTwinCurrentLocation | null;
   className?: string;
 };
 
@@ -52,7 +56,11 @@ function createMarker(
   }
 }
 
-export function OperationalControlDrawerMap({ map, className }: Props) {
+export function OperationalControlDrawerMap({
+  map,
+  currentLocation = null,
+  className,
+}: Props) {
   const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.Marker[]>([]);
   const polylineRef = useRef<google.maps.Polyline | null>(null);
@@ -90,7 +98,18 @@ export function OperationalControlDrawerMap({ map, className }: Props) {
       hasPoint = true;
     };
 
-    addPoint(map.driver, COLOR_DRIVER, "C", map.driver?.label ?? "Conductor");
+    const operational = resolveOperationalMapMarker(map, currentLocation);
+    if (operational) {
+      const titleParts = [operational.label, operational.code].filter(Boolean);
+      addPoint(
+        { lat: operational.lat, lng: operational.lng },
+        operational.source === "current_location" ? COLOR_CURRENT : COLOR_DRIVER,
+        operational.source === "current_location" ? "U" : "C",
+        titleParts.join(" · ") ||
+          (operational.source === "current_location" ? "Ubicación actual" : "Conductor"),
+      );
+    }
+
     addPoint(map.declared_port, COLOR_DECLARED, "D", map.declared_port?.label ?? "Puerto declarado");
     addPoint(map.confirmed_port, COLOR_CONFIRMED, "P", map.confirmed_port?.label ?? "Puerto confirmado");
     addPoint(map.destination, COLOR_DEST, "F", map.destination?.label ?? "Destino");
@@ -117,7 +136,7 @@ export function OperationalControlDrawerMap({ map, className }: Props) {
         /* optional */
       }
     }
-  }, [map]);
+  }, [map, currentLocation]);
 
   const handleMapReady = useCallback(
     (gmap: google.maps.Map) => {
@@ -158,8 +177,8 @@ export function OperationalControlDrawerMap({ map, className }: Props) {
   }
 
   return (
-      <MapView
-        className={cn("h-80 rounded-lg border border-slate-200 overflow-hidden", className)}
+    <MapView
+      className={cn("h-80 rounded-lg border border-slate-200 overflow-hidden", className)}
       initialCenter={DEFAULT_CENTER}
       initialZoom={12}
       onMapReady={handleMapReady}
