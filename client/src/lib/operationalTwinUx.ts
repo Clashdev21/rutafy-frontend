@@ -4,9 +4,9 @@ import type {
   OperationalDigitalTwin,
   OperationalInsidePortElapsed,
   OperationalJourneyPhase,
-  OperationalRouteNode,
   OperationalStationaryTime,
 } from "@/api/operational-digital-twin";
+import { operationalEtaAt } from "@/api/operational-digital-twin";
 import { resolveEtaDisplay, resolveOperationalStateLabel } from "@/lib/operationalControlDisplay";
 import { deriveRiskBand, type RiskBand } from "@/lib/operationalControlUx";
 import {
@@ -14,8 +14,12 @@ import {
   isPortIngressPhase,
   journeyLiveToPhases,
   journeyTrackingModeLabel,
+  resolveCorridorLabel,
+  resolveEtaSourceKind,
+  resolveOperationalEventLabel,
   resolveOperationalPhaseLabel,
   resolveTechnicalGpsStatus,
+  type EtaSourceKind,
 } from "@/lib/operationalTwinContract";
 
 export type RiskPresentation = {
@@ -37,6 +41,8 @@ export type RouteNodeUi = {
   name: string;
   isCurrent: boolean;
   isDestination?: boolean;
+  /** Geographic role for route tab. */
+  kind?: "origin" | "corridor" | "destination" | "current_location";
 };
 
 export type ContainerLiveState = {
@@ -64,9 +70,12 @@ export type ContainerLiveState = {
   etaHero: string;
   etaSubLabel: string;
   etaExpired: boolean;
-  etaSource: "ia" | "gps" | "programacion";
+  etaSource: EtaSourceKind;
   corridorName: string | null;
   risk: RiskPresentation;
+  /** Drawer-only risk (no inventar Retraso; GPS separado). */
+  drawerRisk: RiskPresentation;
+  activeAlerts: string[];
   journeyPhases: JourneyPhaseUi[];
   routeNodes: RouteNodeUi[];
   timeline: Array<{ at?: string | null; title: string; detail?: string | null }>;
@@ -86,9 +95,9 @@ const DEFAULT_JOURNEY_PHASES = [
 ] as const;
 
 const NODE_ALIASES: Record<string, string> = {
-  BV_YUMBO: "Yumbo",
   CDR_YUMBO: "CDR Yumbo",
   SPIA: "SPIA",
+  SPIA_GATE: "SPIA Entrada/Salida",
   SPB: "SPB",
   TCBUEN: "Buenaventura",
   VIJES: "Vijes",
@@ -97,6 +106,19 @@ const NODE_ALIASES: Record<string, string> = {
   CISNEROS: "Cisneros",
   LOBOGUERRERO: "Loboguerrero",
 };
+
+const NON_GEOGRAPHIC_ROUTE_CODES = new Set([
+  "GPS_LOST",
+  "GPS_OFFLINE",
+  "TRACKING_STARTED",
+  "DISPATCH_CREATED",
+  "DISPATCHED",
+  "UNKNOWN",
+  "COMPLETED",
+  "DONE",
+  "PENDING",
+  "CURRENT",
+]);
 
 function titleCase(value: string): string {
   return value
@@ -110,7 +132,7 @@ export function humanizeNodeName(value?: string | null): string {
   const raw = value?.trim();
   if (!raw) return "Sin ubicación";
 
-  const upper = raw.toUpperCase();
+  const upper = raw.toUpperCase().replace(/\s+/g, "_");
   if (NODE_ALIASES[upper]) return NODE_ALIASES[upper];
 
   if (/^CDR_/i.test(raw)) {
@@ -118,7 +140,7 @@ export function humanizeNodeName(value?: string | null): string {
     return place ? `CDR ${titleCase(place)}` : "CDR";
   }
 
-  if (/^BV_/i.test(raw)) return titleCase(raw.replace(/^BV_/i, ""));
+  if (/^BV_/i.test(raw)) return resolveCorridorLabel(raw, null) ?? titleCase(raw.replace(/^BV_/i, ""));
   if (/^INGRESANDO\s+A/i.test(raw)) return titleCase(raw);
   if (/^[A-Z0-9_]+$/.test(raw)) return titleCase(raw);
   return raw;
@@ -152,6 +174,7 @@ export function minutesUntil(iso?: string | null, now = Date.now()): string | nu
   return formatMinutesToNext(diff);
 }
 
+/** Tower-compatible risk presentation (unchanged band engine). */
 export function resolveRiskPresentation(
   row: OperationalControlContainerRow,
   twin?: OperationalDigitalTwin | null,
@@ -188,11 +211,76 @@ export function resolveRiskPresentation(
   return { band, emoji: "🟢", label: "Normal", reasons };
 }
 
+/**
+ * Drawer risk: do not invent "Retraso"; do not treat timeline GPS_LOST as active alert.
+ * Does not rewrite twin.risk.reasons; filters contradictory GPS copy for display.
+ */
+export function resolveDrawerRiskPresentation(
+  row: OperationalControlContainerRow,
+  twin?: OperationalDigitalTwin | null,
+): { risk: RiskPresentation; activeAlerts: string[] } {
+  const band = deriveRiskBand(row);
+  const technical = resolveTechnicalGpsStatus(twin)?.toUpperCase() ?? "";
+  const twinReasons = twin?.risk?.reasons ?? [];
+  const rawAlerts = [...(twin?.alerts ?? []), ...(row.alerts ?? [])];
+
+  const activeAlerts: string[] = [];
+  for (const a of rawAlerts) {
+    const lower = a.toLowerCase();
+    const code = a.trim().toUpperCase().replace(/\s+/g, "_");
+    if (code === "GPS_LOST" || code === "UNKNOWN") continue;
+    if (/gps|offline|señal/.test(lower)) {
+      if (technical === "OFFLINE" || technical === "STALE") {
+        const label = "Señal GPS perdida";
+        if (!activeAlerts.includes(label)) activeAlerts.push(label);
+      }
+      continue;
+    }
+    const human = resolveOperationalEventLabel(a);
+    if (!activeAlerts.includes(human)) activeAlerts.push(human);
+  }
+
+  const reasons: string[] = [];
+  for (const r of twinReasons) {
+    const lower = r.toLowerCase();
+    if (/gps\s*activo|online/.test(lower) && (technical === "OFFLINE" || technical === "STALE")) {
+      continue;
+    }
+    if (/gps|offline|señal/.test(lower)) {
+      continue;
+    }
+    if (/eta|vencid/.test(lower) && !reasons.includes("ETA vencido")) {
+      reasons.push("ETA vencido");
+    } else if (/delay|retraso/.test(lower) && !reasons.includes("Retraso")) {
+      reasons.push("Retraso");
+    } else if (/congest|tráfico|traffic/.test(lower) && !reasons.includes("Congestión")) {
+      reasons.push("Congestión");
+    } else if (r.trim() && !reasons.includes(r.trim())) {
+      reasons.push(r.trim());
+    }
+  }
+
+  let label = "Normal";
+  let emoji = "🟢";
+  if (band === "critical") {
+    label = "Riesgo";
+    emoji = "🔴";
+  } else if (band === "delayed" || band === "upcoming" || reasons.length > 0 || activeAlerts.length > 0) {
+    label = "Atención";
+    emoji = "🟡";
+  }
+
+  return {
+    risk: { band, emoji, label, reasons },
+    activeAlerts,
+  };
+}
+
 function derivePhaseLabel(twin: OperationalDigitalTwin | null, row: OperationalControlContainerRow): string {
   if (twin?.current_phase || twin?.current_phase_label) {
-    return resolveOperationalPhaseLabel(twin.current_phase, twin.current_phase_label).toUpperCase();
+    return resolveOperationalPhaseLabel(twin.current_phase, twin.current_phase_label);
   }
-  return resolveOperationalStateLabel(row).toUpperCase();
+  return resolveOperationalStateLabel(row);
 }
 
 function deriveJourneyPhases(
@@ -230,57 +318,81 @@ function deriveJourneyPhases(
   });
 }
 
-function deriveRouteNodes(
+function isNonGeographicRouteToken(value: string): boolean {
+  const code = value.trim().toUpperCase().replace(/\s+/g, "_");
+  if (NON_GEOGRAPHIC_ROUTE_CODES.has(code)) return true;
+  if (/GPS|TRACKING|DISPATCH|UNKNOWN|SEÑAL|SENAL/.test(code)) return true;
+  return false;
+}
+
+/** Geographic route only — never timeline titles. Exported for tests. */
+export function deriveRouteNodes(
   twin: OperationalDigitalTwin | null,
   row: OperationalControlContainerRow,
 ): RouteNodeUi[] {
   const nodes: RouteNodeUi[] = [];
-  const currentCode =
-    twin?.current_node_label ||
-    twin?.observed_truth.current_node_code ||
-    twin?.journey_progress?.current_step;
 
-  const pushNode = (name: string, isCurrent = false, isDestination = false) => {
-    const id = `${name}-${nodes.length}`;
-    if (nodes.some((n) => n.name === name)) return;
-    nodes.push({ id, name: humanizeNodeName(name), isCurrent, isDestination });
+  const pushNode = (
+    name: string,
+    opts?: { isCurrent?: boolean; isDestination?: boolean; kind?: RouteNodeUi["kind"] },
+  ) => {
+    const trimmed = name?.trim();
+    if (!trimmed) return;
+    if (isNonGeographicRouteToken(trimmed)) return;
+    const display = humanizeNodeName(trimmed);
+    if (nodes.some((n) => n.name === display)) return;
+    nodes.push({
+      id: `${display}-${nodes.length}`,
+      name: display,
+      isCurrent: Boolean(opts?.isCurrent),
+      isDestination: Boolean(opts?.isDestination),
+      kind: opts?.kind,
+    });
   };
 
   if (twin?.route_nodes?.length) {
     for (const n of twin.route_nodes) {
       const name = n.label || n.name || n.code || "";
-      pushNode(name, Boolean(n.is_current), Boolean(n.is_destination));
+      if (isNonGeographicRouteToken(name)) continue;
+      pushNode(name, {
+        isCurrent: Boolean(n.is_current),
+        isDestination: Boolean(n.is_destination),
+        kind: n.is_destination ? "destination" : undefined,
+      });
     }
-    return nodes;
+    if (nodes.length > 0) return nodes;
   }
 
   const port = twin?.declared_truth.port_code || row.declared_port_code || row.declared_port;
   const dest =
-    twin?.declared_truth.destination_code || row.destination_code || row.destination;
+    twin?.declared_truth.destination_code ||
+    row.destination_code ||
+    row.destination ||
+    twin?.map.destination?.label ||
+    twin?.map.destination?.code;
+  const corridor =
+    resolveCorridorLabel(twin?.journey_corridor_code, twin?.corridor_name) ||
+    twin?.journey_corridor_code ||
+    null;
 
-  if (port) pushNode(port);
-  if (twin?.map.polyline?.length) {
-    for (const pt of twin.map.polyline) {
-      if (pt.label) pushNode(pt.label);
-    }
-  }
-  if (twin?.timeline?.length) {
-    for (const ev of twin.timeline) {
-      if (ev.title) pushNode(ev.title);
-    }
-  }
-  if (currentCode) {
-    const human = humanizeNodeName(currentCode);
-    const idx = nodes.findIndex((n) => n.name === human);
+  if (port) pushNode(String(port), { kind: "origin" });
+  if (corridor) pushNode(corridor, { kind: "corridor" });
+  if (dest) pushNode(String(dest), { isDestination: true, kind: "destination" });
+
+  // Mark current only when observed location matches an existing geographic node.
+  // Do not insert current_location as a new route stop (keeps declared origin intact).
+  const observedLabel =
+    twin?.current_location?.name?.trim() ||
+    humanizeNodeName(twin?.current_location?.node_code) ||
+    humanizeNodeName(twin?.observed_truth.current_node_code);
+  if (observedLabel && observedLabel !== "Sin ubicación") {
+    const idx = nodes.findIndex((n) => n.name === observedLabel);
     if (idx >= 0) nodes[idx].isCurrent = true;
-    else pushNode(currentCode, true);
   }
-  if (dest) pushNode(dest, false, true);
 
   if (nodes.length === 0) {
-    pushNode(port || "Puerto");
-    pushNode(currentCode || "En ruta", true);
-    pushNode(dest || "CDR", false, true);
+    if (port) pushNode(String(port), { kind: "origin" });
+    if (dest) pushNode(String(dest), { isDestination: true, kind: "destination" });
   }
 
   return nodes;
@@ -304,36 +416,50 @@ export function buildContainerLiveState(
       row.declared_port,
   );
 
-  const nextNodeName = humanizeNodeName(
+  const nextRaw =
     twin?.next_node_label ||
-      twin?.next_expected_step?.label ||
-      twin?.journey_progress?.next_step ||
-      twin?.inferred_truth.next_expected_event ||
-      row.destination,
-  );
+    twin?.next_expected_step?.label ||
+    twin?.journey_progress?.next_step ||
+    twin?.inferred_truth.next_expected_event ||
+    row.destination;
+  const nextTrimmed = nextRaw != null ? String(nextRaw).trim() : "";
+  // Never call resolveOperationalEventLabel on empty — it returns "Evento".
+  const nextNodeName = nextTrimmed
+    ? resolveOperationalEventLabel(nextTrimmed) || humanizeNodeName(nextTrimmed)
+    : "Sin destino";
+
+  const twinEtaAt = operationalEtaAt(twin?.eta);
+  const inferredArrival = twin?.inferred_truth.expected_arrival_cdr?.trim() || null;
+  const fromInferredOnly = !twinEtaAt && Boolean(inferredArrival);
 
   const etaIso =
-    twin?.eta ||
-    twin?.inferred_truth.expected_arrival_cdr ||
-    row.eta ||
-    row.window_end_at ||
-    row.scheduled_at;
+    twinEtaAt ||
+    inferredArrival ||
+    row.eta?.trim() ||
+    row.window_end_at?.trim() ||
+    row.scheduled_at?.trim() ||
+    null;
 
+  const etaExpiredFromTwin = twin?.eta?.is_expired === true;
   const etaDisplay = resolveEtaDisplay(
     { eta: etaIso, window_end_at: row.window_end_at, scheduled_at: row.scheduled_at },
-    { detailEta: twin?.eta },
+    { detailEta: etaIso },
   );
+  const etaExpired = etaExpiredFromTwin || etaDisplay.isExpired;
 
   const technicalGps = resolveTechnicalGpsStatus(twin);
-  const etaSource: ContainerLiveState["etaSource"] = twin?.eta
-    ? "ia"
-    : technicalGps?.toUpperCase() === "ONLINE" || row.gps_status?.toUpperCase() === "ONLINE"
-      ? "gps"
-      : "programacion";
+  const etaSource = resolveEtaSourceKind({
+    eta: twin?.eta ?? null,
+    windowEndAt: row.window_end_at,
+    scheduledAt: twin?.declared_truth.scheduled_at ?? row.scheduled_at,
+    usedIso: etaIso,
+    technicalGpsOnline: technicalGps?.toUpperCase() === "ONLINE",
+    fromInferredOnly,
+  });
 
   const minutesToNext =
     formatMinutesToNext(twin?.minutes_to_next) ||
-    minutesUntil(twin?.next_expected_step?.eta ?? twin?.eta) ||
+    minutesUntil(twin?.next_expected_step?.eta ?? twinEtaAt) ||
     minutesUntil(etaIso);
 
   const phaseLabel = derivePhaseLabel(twin, row);
@@ -342,6 +468,12 @@ export function buildContainerLiveState(
   const journeyTrackingMode = twin?.journey_tracking_mode
     ? String(twin.journey_tracking_mode).trim()
     : null;
+
+  const drawer = resolveDrawerRiskPresentation(row, twin);
+  const corridorName =
+    resolveCorridorLabel(twin?.journey_corridor_code, twin?.corridor_name) ??
+    twin?.corridor_name ??
+    null;
 
   const heartbeatKey = [
     progressPercent,
@@ -374,16 +506,26 @@ export function buildContainerLiveState(
     currentNodeName,
     nextNodeName,
     minutesToNext,
-    etaHero: etaHeroFromDisplay(etaDisplay.timeLabel, etaIso),
-    etaSubLabel: etaDisplay.subLabel || (etaSource === "ia" ? "estimado" : ""),
-    etaExpired: etaDisplay.isExpired,
+    etaHero: etaExpired ? "ETA vencido" : etaHeroFromDisplay(etaDisplay.timeLabel, etaIso),
+    etaSubLabel: etaExpired ? "ETA vencido" : etaDisplay.subLabel || "",
+    etaExpired,
     etaSource,
-    corridorName: twin?.corridor_name ?? twin?.journey_corridor_code ?? null,
+    corridorName,
     risk: resolveRiskPresentation(row, twin),
+    drawerRisk: drawer.risk,
+    activeAlerts: drawer.activeAlerts,
     journeyPhases: deriveJourneyPhases(progressPercent, twin, twin?.journey_phases),
     routeNodes: deriveRouteNodes(twin, row),
     timeline: twin?.timeline?.length
-      ? twin.timeline.map((e) => ({ at: e.at, title: e.title, detail: e.detail }))
+      ? twin.timeline.map((e) => ({
+          at: e.at,
+          // Historical events must not inherit current_location geography.
+          title: resolveOperationalEventLabel(e.title, {
+            nodeCode: null,
+            nodeName: null,
+          }),
+          detail: e.detail,
+        }))
       : [],
     technicalGpsStatus: technicalGps,
     insidePortElapsed: twin?.inside_port_elapsed ?? null,
@@ -445,7 +587,7 @@ export function computeTowerKpis(states: ContainerLiveState[], activeCount: numb
     if (s.risk.band === "critical" || s.risk.band === "delayed" || s.risk.reasons.length > 0) {
       atRisk += 1;
     }
-    const iso = s.twin?.eta || s.row.eta;
+    const iso = operationalEtaAt(s.twin?.eta) || s.row.eta;
     if (iso) {
       const ms = Date.parse(iso);
       if (Number.isFinite(ms) && ms > now) {

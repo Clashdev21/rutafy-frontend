@@ -86,6 +86,18 @@ export type OperationalDigitalTwinNextStep = {
   minutes?: number | null;
 };
 
+/** Canonical ETA object from Digital Twin (legacy string normalizes to eta_at). */
+export type OperationalEta = {
+  eta_at?: string | null;
+  destination_code?: string | null;
+  source?: string | null;
+  source_label?: string | null;
+  confidence?: number | null;
+  label?: string | null;
+  is_expired?: boolean | null;
+  expired_by_minutes?: number | null;
+};
+
 export type OperationalJourneyPhase = {
   key: string;
   label: string;
@@ -141,7 +153,7 @@ export type OperationalDigitalTwin = {
   journey_live?: OperationalDigitalTwinJourneyLiveStep[];
   journey_progress?: OperationalDigitalTwinJourneyProgress | null;
   next_expected_step?: OperationalDigitalTwinNextStep | null;
-  eta?: string | null;
+  eta?: OperationalEta | null;
   risk?: OperationalDigitalTwinRisk | null;
   declared_truth: OperationalDigitalTwinDeclaredTruth;
   observed_truth: OperationalDigitalTwinObservedTruth;
@@ -408,6 +420,63 @@ function normalizeNextStep(raw: unknown): OperationalDigitalTwinNextStep | null 
   };
 }
 
+export function normalizeOperationalEta(raw: unknown): OperationalEta | null {
+  if (raw == null) return null;
+  if (typeof raw === "string") {
+    const eta_at = toOptionalString(raw);
+    return eta_at ? { eta_at } : null;
+  }
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return null;
+  }
+  const rec = asRecord(raw);
+  if (!rec) return null;
+  const eta_at =
+    pick(rec, "eta_at", toOptionalString) ??
+    pick(rec, "at", toOptionalString) ??
+    pick(rec, "eta", toOptionalString) ??
+    pick(rec, "value", toOptionalString);
+  const source = pick(rec, "source", toOptionalString);
+  const source_label = pick(rec, "source_label", toOptionalString);
+  const label = pick(rec, "label", toOptionalString);
+  const destination_code = pick(rec, "destination_code", toOptionalString);
+  const confidence = pick(rec, "confidence", toFiniteNumber);
+  const expired_by_minutes = pick(rec, "expired_by_minutes", toFiniteNumber);
+  let is_expired: boolean | null = null;
+  if (typeof rec.is_expired === "boolean") is_expired = rec.is_expired;
+  else if (typeof rec.expired === "boolean") is_expired = rec.expired;
+
+  if (
+    !eta_at &&
+    !source &&
+    !source_label &&
+    !label &&
+    !destination_code &&
+    confidence == null &&
+    is_expired == null &&
+    expired_by_minutes == null
+  ) {
+    return null;
+  }
+  return {
+    eta_at,
+    destination_code,
+    source,
+    source_label,
+    confidence,
+    label,
+    is_expired,
+    expired_by_minutes,
+  };
+}
+
+/** ISO instant from modern or legacy ETA shape. */
+export function operationalEtaAt(eta?: OperationalEta | string | null): string | null {
+  if (eta == null) return null;
+  if (typeof eta === "string") return eta.trim() || null;
+  return eta.eta_at?.trim() || null;
+}
+
 function normalizeRisk(raw: unknown): OperationalDigitalTwinRisk | null {
   const rec = asRecord(raw);
   if (!rec) return null;
@@ -640,7 +709,7 @@ export function normalizeOperationalDigitalTwin(raw: unknown): OperationalDigita
     journey_live: normalizeJourneyLive(journeyLiveRaw),
     journey_progress: normalizeJourneyProgress(journeyRaw),
     next_expected_step: normalizeNextStep(nextStepRaw),
-    eta: pick(root, "eta", toOptionalString) ?? pick(root, "eta_at", toOptionalString),
+    eta: normalizeOperationalEta(root.eta ?? root.eta_at),
     risk: normalizeRisk(root.risk),
     declared_truth: normalizeDeclaredTruth(root.declared_truth ?? root.declaredTruth),
     observed_truth: normalizeObservedTruth(root.observed_truth ?? root.observedTruth),

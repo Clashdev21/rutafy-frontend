@@ -22,10 +22,16 @@ import {
 } from "@/lib/operationalTwinUx";
 import {
   journeyTrackingModeLabel,
+  resolveCorridorLabel,
   resolveDriverIdentity,
+  resolveEtaSourceKind,
+  resolveJourneyStateLabel,
+  resolveOperationalEventLabel,
   resolveOperationalPhaseLabel,
   resolveTechnicalGpsStatus,
+  type EtaSourceKind,
 } from "@/lib/operationalTwinContract";
+import { operationalEtaAt } from "@/api/operational-digital-twin";
 
 export type OperationalDrawerSource = "digital_twin" | "legacy" | "row_fallback";
 
@@ -112,7 +118,11 @@ export type OperationalDrawerViewModel = {
   route_nodes: RouteNodeUi[];
   journey_phases: JourneyPhaseUi[];
   risk_presentation: RiskPresentation;
-  eta_source: "ia" | "gps" | "programacion";
+  active_alerts: string[];
+  eta_source: EtaSourceKind;
+  /** Human corridor label for executive UI. */
+  corridor_label?: string | null;
+  journey_state_label?: string | null;
 };
 
 function mergeRowBasics(
@@ -196,8 +206,12 @@ export function buildDrawerViewFromDigitalTwin(
     next_step: twin.journey_progress?.next_step ?? null,
     next_expected_step_label: twin.next_expected_step?.label ?? null,
     eta_display: resolveEtaDisplay(
-      { eta: twin.eta, window_end_at: null, scheduled_at: twin.declared_truth.scheduled_at },
-      { detailEta: twin.eta },
+      {
+        eta: operationalEtaAt(twin.eta),
+        window_end_at: row?.window_end_at ?? null,
+        scheduled_at: twin.declared_truth.scheduled_at,
+      },
+      { detailEta: operationalEtaAt(twin.eta) ?? twin.inferred_truth.expected_arrival_cdr },
     ),
     declared_truth: { ...twin.declared_truth },
     observed_truth: { ...twin.observed_truth },
@@ -206,11 +220,15 @@ export function buildDrawerViewFromDigitalTwin(
     inside_port_elapsed: twin.inside_port_elapsed ?? null,
     cdr_elapsed: twin.cdr_elapsed ?? null,
     stationary_time: twin.stationary_time ?? null,
-    timeline: twin.timeline.map((ev) => ({
-      title: ev.title,
-      at: ev.at,
-      detail: ev.detail,
-    })),
+    timeline: (live?.timeline?.length
+      ? live.timeline
+      : twin.timeline.map((ev) => ({
+          // Historical events: only event-owned context (none on current contract).
+          title: resolveOperationalEventLabel(ev.title),
+          at: ev.at,
+          detail: ev.detail,
+        }))
+    ),
     timeline_summary: twin.timeline_summary,
     alerts: [
       ...twin.alerts,
@@ -220,6 +238,10 @@ export function buildDrawerViewFromDigitalTwin(
     history: [],
     corridor_name:
       twin.corridor_name ?? twin.journey_corridor_code ?? live?.corridorName,
+    corridor_label:
+      live?.corridorName ??
+      resolveCorridorLabel(twin.journey_corridor_code, twin.corridor_name),
+    journey_state_label: resolveJourneyStateLabel(twin.journey_current_state),
     current_node_label:
       live?.currentNodeName ??
       twin.current_location?.name ??
@@ -228,8 +250,17 @@ export function buildDrawerViewFromDigitalTwin(
     minutes_to_next: live?.minutesToNext ?? null,
     route_nodes: live?.routeNodes ?? [],
     journey_phases: live?.journeyPhases ?? [],
-    risk_presentation: live?.risk ?? resolveRiskPresentationFromRow(row, twin),
-    eta_source: live?.etaSource ?? "ia",
+    risk_presentation: live?.drawerRisk ?? resolveRiskPresentationFromRow(row, twin),
+    active_alerts: live?.activeAlerts ?? [],
+    eta_source:
+      live?.etaSource ??
+      resolveEtaSourceKind({
+        eta: twin.eta,
+        windowEndAt: row?.window_end_at,
+        scheduledAt: twin.declared_truth.scheduled_at,
+        usedIso: operationalEtaAt(twin.eta),
+        fromInferredOnly: !operationalEtaAt(twin.eta) && Boolean(twin.inferred_truth.expected_arrival_cdr),
+      }),
   };
   return mergeRowBasics(vm, row);
 }
@@ -315,9 +346,12 @@ export function buildDrawerViewFromLegacyDetail(
     route_nodes: row ? buildContainerLiveState(row, null).routeNodes : [],
     journey_phases: row ? buildContainerLiveState(row, null).journeyPhases : [],
     risk_presentation: row
-      ? buildContainerLiveState(row, null).risk
+      ? buildContainerLiveState(row, null).drawerRisk
       : { band: "normal", emoji: "🟢", label: "Normal", reasons: [] },
+    active_alerts: row ? buildContainerLiveState(row, null).activeAlerts : [],
     eta_source: "programacion",
+    corridor_label: null,
+    journey_state_label: null,
   };
   return mergeRowBasics(vm, row);
 }
@@ -367,8 +401,11 @@ export function buildDrawerViewFromRow(
     minutes_to_next: liveFallback.minutesToNext,
     route_nodes: liveFallback.routeNodes,
     journey_phases: liveFallback.journeyPhases,
-    risk_presentation: liveFallback.risk,
+    risk_presentation: liveFallback.drawerRisk,
+    active_alerts: liveFallback.activeAlerts,
     eta_source: liveFallback.etaSource,
+    corridor_label: liveFallback.corridorName,
+    journey_state_label: null,
   };
 }
 

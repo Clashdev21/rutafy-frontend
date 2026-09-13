@@ -10,6 +10,7 @@ type Props = {
 
 export function OperationalJourneyBar({ phases, percent, compact, className }: Props) {
   const p = Math.min(100, Math.max(0, percent));
+  const cols = Math.max(phases.length, 1);
 
   if (compact) {
     return (
@@ -26,7 +27,10 @@ export function OperationalJourneyBar({ phases, percent, compact, className }: P
 
   return (
     <div className={cn("space-y-2", className)}>
-      <div className="grid grid-cols-5 gap-1 text-[10px] text-gray-500 uppercase tracking-wide">
+      <div
+        className="grid gap-1 text-xs text-gray-600 tracking-wide"
+        style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+      >
         {phases.map((phase) => (
           <span
             key={phase.key}
@@ -35,6 +39,7 @@ export function OperationalJourneyBar({ phases, percent, compact, className }: P
               phase.current && "text-[#1E3A5F] font-semibold",
               phase.completed && "text-[#2A9D8F]",
             )}
+            title={phase.label}
           >
             {phase.label}
           </span>

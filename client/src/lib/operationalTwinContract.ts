@@ -3,18 +3,80 @@ import type {
   OperationalDigitalTwin,
   OperationalDigitalTwinCurrentLocation,
   OperationalDigitalTwinJourneyLiveStep,
+  OperationalEta,
   OperationalJourneyPhase,
 } from "@/api/operational-digital-twin";
+import { operationalEtaAt } from "@/api/operational-digital-twin";
 import type { OperationalControlMapData } from "@/api/operational-control";
 
 export const OPERATIONAL_PHASE_FALLBACK_LABELS: Record<string, string> = {
   AT_GATE: "En ingreso al puerto",
+  ENTERED_PORT: "Dentro del puerto",
+  IN_PORT: "En puerto",
+  EXIT_PORT: "Salida de puerto",
 };
 
 export const JOURNEY_TRACKING_MODE_LABELS: Record<JourneyTrackingMode, string> = {
   EMAIL_ONLY: "Solo correo",
   HYBRID: "Híbrido",
   TELEMETRY: "Telemetría",
+};
+
+/** Journey / event codes → human labels (presentation only). */
+export const OPERATIONAL_EVENT_LABELS: Record<string, string> = {
+  TRACKING_STARTED: "Seguimiento iniciado",
+  DISPATCH_CREATED: "Despacho registrado",
+  DISPATCHED: "Despacho registrado",
+  AT_GATE: "En ingreso al puerto",
+  UNKNOWN: "Posición fuera de nodos conocidos",
+  GPS_LOST: "Señal GPS perdida",
+  GPS_OFFLINE: "Señal GPS perdida",
+  ENTERED_PORT: "Ingreso al puerto",
+  EXIT_PORT: "Salida de puerto",
+  AT_CDR: "En CDR",
+  IN_TRANSIT: "En tránsito",
+};
+
+/** journey_live step → compact bar label (do not invent new stages). */
+export const JOURNEY_LIVE_BAR_LABELS: Record<string, string> = {
+  DISPATCHED: "Programado",
+  DISPATCH_CREATED: "Programado",
+  TRACKING_STARTED: "Corredor",
+  AT_GATE: "Ingreso",
+  ENTERED_PORT: "Operación",
+  IN_PORT: "Operación",
+  EXIT_PORT: "Salida puerto",
+  AT_CDR: "CDR",
+  CDR: "CDR",
+  IN_TRANSIT: "Tránsito",
+};
+
+/** Extensible corridor codes → human corridor labels. */
+export const CORRIDOR_LABELS: Record<string, string> = {
+  BV_YUMBO: "Buenaventura → Yumbo",
+};
+
+export const GPS_STATUS_HUMAN_LABELS: Record<string, string> = {
+  ONLINE: "Con señal",
+  OFFLINE: "Sin señal",
+  STALE: "Señal antigua",
+};
+
+export type EtaSourceKind =
+  | "ia"
+  | "ventana"
+  | "programacion"
+  | "gps"
+  | "estimacion_rutafy"
+  | "estimacion";
+
+export const ETA_SOURCE_BADGE_LABELS: Record<EtaSourceKind, string> = {
+  ia: "IA Rutafy",
+  ventana: "Ventana operativa",
+  programacion: "Programación",
+  gps: "Seguimiento GPS",
+  estimacion_rutafy: "Estimación Rutafy",
+  estimacion: "Estimación",
 };
 
 export function normalizeOperationalPhaseCode(value?: string | null): string {
@@ -36,6 +98,7 @@ export function resolveOperationalPhaseLabel(
   if (OPERATIONAL_PHASE_FALLBACK_LABELS[code]) {
     return OPERATIONAL_PHASE_FALLBACK_LABELS[code];
   }
+  if (OPERATIONAL_EVENT_LABELS[code]) return OPERATIONAL_EVENT_LABELS[code];
   return code
     .split(/_+/g)
     .filter(Boolean)
@@ -66,6 +129,83 @@ export function journeyTrackingModeLabel(
     .toUpperCase()
     .replace(/[\s-]+/g, "_") as JourneyTrackingMode;
   return JOURNEY_TRACKING_MODE_LABELS[key] ?? String(mode).trim();
+}
+
+export function resolveJourneyStateLabel(state?: string | null): string | null {
+  if (state == null || String(state).trim() === "") return null;
+  const code = normalizeOperationalPhaseCode(state);
+  return OPERATIONAL_EVENT_LABELS[code] ?? resolveOperationalPhaseLabel(state, null);
+}
+
+export function resolveCorridorLabel(
+  corridorCode?: string | null,
+  corridorName?: string | null,
+): string | null {
+  const name = corridorName?.trim();
+  if (name && !/^[A-Z0-9_]+$/.test(name)) return name;
+  const code = normalizeOperationalPhaseCode(corridorCode || name);
+  if (!code) return name || null;
+  if (CORRIDOR_LABELS[code]) return CORRIDOR_LABELS[code];
+  if (/^BV_/.test(code)) {
+    const rest = code.replace(/^BV_/, "").replace(/_/g, " ");
+    return `Buenaventura → ${rest
+      .split(/\s+/)
+      .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+      .join(" ")}`;
+  }
+  return name || corridorCode?.trim() || null;
+}
+
+export function resolveGpsStatusLabel(value?: string | null): string {
+  const key = normalizeOperationalPhaseCode(value);
+  if (!key) return "Sin señal";
+  return GPS_STATUS_HUMAN_LABELS[key] ?? value!.trim();
+}
+
+/**
+ * Humanize event/timeline titles. Preserves useful backend prose.
+ * AT_GATE + SPIA context → "Llegó a la entrada de SPIA".
+ */
+export function resolveOperationalEventLabel(
+  rawTitle?: string | null,
+  context?: { nodeCode?: string | null; nodeName?: string | null },
+): string {
+  const raw = rawTitle?.trim();
+  if (!raw) return "Evento";
+
+  const code = normalizeOperationalPhaseCode(raw);
+  if (code === "AT_GATE") {
+    const node = `${context?.nodeCode ?? ""} ${context?.nodeName ?? ""}`.toUpperCase();
+    if (/\bSPIA\b/.test(node) || /SPIA/.test(raw.toUpperCase())) {
+      return "Llegó a la entrada de SPIA";
+    }
+    return OPERATIONAL_EVENT_LABELS.AT_GATE;
+  }
+
+  if (OPERATIONAL_EVENT_LABELS[code]) return OPERATIONAL_EVENT_LABELS[code];
+
+  // Already human Spanish / mixed prose from backend
+  if (/[a-záéíóúñ]/i.test(raw) && !/^[A-Z0-9_]+$/.test(raw)) {
+    return raw;
+  }
+
+  // Title-case underscore codes
+  if (/^[A-Z0-9_]+$/.test(raw)) {
+    return raw
+      .split(/_+/)
+      .filter(Boolean)
+      .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+      .join(" ");
+  }
+  return raw;
+}
+
+export function resolveJourneyLiveBarLabel(step?: string | null): string {
+  const code = normalizeOperationalPhaseCode(step);
+  if (!code) return "Paso";
+  if (JOURNEY_LIVE_BAR_LABELS[code]) return JOURNEY_LIVE_BAR_LABELS[code];
+  if (OPERATIONAL_EVENT_LABELS[code]) return OPERATIONAL_EVENT_LABELS[code];
+  return resolveOperationalEventLabel(step);
 }
 
 export function hasValidMapCoords(
@@ -155,7 +295,7 @@ export function journeyLiveToPhases(
         }));
     return {
       key: item.step,
-      label: item.step.replace(/_/g, " "),
+      label: resolveJourneyLiveBarLabel(item.step),
       completed,
       current: Boolean(current),
     };
@@ -211,6 +351,84 @@ export function resolveTechnicalGpsStatus(twin: OperationalDigitalTwin | null | 
     twin.driver?.gps_status?.trim() ||
     null
   );
+}
+
+function normalizeEtaSourceKey(value?: string | null): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+/**
+ * Resolve ETA presentation source. Never default to IA.
+ */
+export function resolveEtaSourceKind(input: {
+  eta?: OperationalEta | string | null;
+  windowEndAt?: string | null;
+  scheduledAt?: string | null;
+  usedIso?: string | null;
+  technicalGpsOnline?: boolean;
+  fromInferredOnly?: boolean;
+}): EtaSourceKind {
+  const etaObj: OperationalEta | null =
+    typeof input.eta === "string"
+      ? input.eta.trim()
+        ? { eta_at: input.eta.trim() }
+        : null
+      : input.eta ?? null;
+
+  const source = normalizeEtaSourceKey(etaObj?.source);
+  const sourceLabel = normalizeEtaSourceKey(etaObj?.source_label);
+
+  const blob = `${source} ${sourceLabel}`;
+
+  if (/ia|model|prediction|ml|ai|rutafy_ia|inferred_model/.test(blob)) {
+    return "ia";
+  }
+  if (/window|ventana|window_end/.test(blob)) {
+    return "ventana";
+  }
+  if (/schedul|program/.test(blob)) {
+    return "programacion";
+  }
+  if (/gps|telemetr|tracking|seguimiento/.test(blob)) {
+    return "gps";
+  }
+
+  const used = input.usedIso?.trim() || operationalEtaAt(etaObj);
+  if (used && input.windowEndAt?.trim() && used === input.windowEndAt.trim()) {
+    return "ventana";
+  }
+  if (used && input.scheduledAt?.trim() && used === input.scheduledAt.trim()) {
+    return "programacion";
+  }
+
+  if (etaObj?.source || etaObj?.source_label) {
+    return "estimacion";
+  }
+
+  if (input.fromInferredOnly) {
+    return "estimacion_rutafy";
+  }
+
+  if (operationalEtaAt(etaObj)) {
+    return "estimacion";
+  }
+
+  if (input.technicalGpsOnline) {
+    return "gps";
+  }
+
+  if (input.windowEndAt?.trim()) return "ventana";
+  if (input.scheduledAt?.trim()) return "programacion";
+
+  return "estimacion";
+}
+
+export function etaSourceBadgeLabel(kind?: EtaSourceKind | null): string {
+  if (!kind) return ETA_SOURCE_BADGE_LABELS.estimacion;
+  return ETA_SOURCE_BADGE_LABELS[kind] ?? ETA_SOURCE_BADGE_LABELS.estimacion;
 }
 
 export function resolveDriverIdentity(twin: OperationalDigitalTwin | null | undefined): {

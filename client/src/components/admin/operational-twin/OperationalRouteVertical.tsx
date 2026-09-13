@@ -17,19 +17,28 @@ export function OperationalRouteVertical({ nodes, className }: Props) {
         <div key={node.id} className="flex flex-col items-center w-full">
           <div
             className={cn(
-              "px-3 py-1.5 rounded-lg text-sm font-medium text-center transition-all duration-500",
-              node.isCurrent
-                ? "bg-[#1E3A5F] text-white shadow-md scale-105"
-                : node.isDestination
-                  ? "bg-[#2A9D8F]/15 text-[#1E3A5F] border border-[#2A9D8F]/30"
-                  : "bg-gray-50 text-gray-700 border border-gray-100",
+              "px-3 py-2 rounded-lg text-[15px] font-medium text-center transition-all duration-500 max-w-full",
+              node.kind === "current_location"
+                ? "bg-sky-600 text-white shadow-md ring-2 ring-sky-300"
+                : node.isCurrent
+                  ? "bg-[#1E3A5F] text-white shadow-md scale-105"
+                  : node.isDestination || node.kind === "destination"
+                    ? "bg-[#2A9D8F]/15 text-[#1E3A5F] border border-[#2A9D8F]/30"
+                    : "bg-gray-50 text-gray-700 border border-gray-100",
             )}
           >
-            {node.isCurrent ? <span className="mr-1" aria-hidden>●</span> : null}
+            {node.isCurrent || node.kind === "current_location" ? (
+              <span className="mr-1" aria-hidden>
+                ●
+              </span>
+            ) : null}
             {node.name}
+            {node.kind === "current_location" ? (
+              <span className="block text-xs font-normal opacity-90 mt-0.5">Ubicación actual</span>
+            ) : null}
           </div>
           {index < nodes.length - 1 ? (
-            <span className="text-gray-300 py-1 text-lg leading-none" aria-hidden>
+            <span className="text-gray-300 py-1.5 text-lg leading-none" aria-hidden>
               ↓
             </span>
           ) : null}

@@ -2,16 +2,27 @@ import { describe, expect, it } from "vitest";
 import { normalizeOperationalDigitalTwin } from "@/api/operational-digital-twin";
 import { buildDrawerViewFromDigitalTwin } from "@/lib/operationalDrawerViewModel";
 import {
+  etaSourceBadgeLabel,
   formatElapsedMinutes,
   journeyLiveToPhases,
   journeyTrackingModeLabel,
+  resolveCorridorLabel,
   resolveDriverIdentity,
   resolveElapsedLabel,
+  resolveEtaSourceKind,
+  resolveGpsStatusLabel,
+  resolveJourneyStateLabel,
+  resolveOperationalEventLabel,
   resolveOperationalMapMarker,
   resolveOperationalPhaseLabel,
   resolveTechnicalGpsStatus,
 } from "@/lib/operationalTwinContract";
-import { buildContainerLiveState } from "@/lib/operationalTwinUx";
+import {
+  buildContainerLiveState,
+  deriveRouteNodes,
+  resolveDrawerRiskPresentation,
+} from "@/lib/operationalTwinUx";
+import { buildOperationalPredictionItems } from "@/components/admin/operational-twin/OperationalPredictionPanel";
 import type { OperationalControlContainerRow } from "@/api/operational-control";
 
 const e2ePayload = {
@@ -150,7 +161,7 @@ describe("Sprint 3C.5F Digital Twin contract", () => {
     const live = buildContainerLiveState(minimalRow(), twin);
     expect(live.operationalPhaseCode).toBe("AT_GATE");
     expect(live.journeyState).toBe("TRACKING_STARTED");
-    expect(live.phaseLabel).toContain("INGRESO");
+    expect(live.phaseLabel.toLowerCase()).toContain("ingreso");
     expect(live.journeyState).not.toBe(live.operationalPhaseCode);
 
     const view = buildDrawerViewFromDigitalTwin(twin, minimalRow());
@@ -201,6 +212,7 @@ describe("Sprint 3C.5F Digital Twin contract", () => {
       "AT_CDR",
     ]);
     expect(live.journeyPhases.find((p) => p.current)?.key).toBe("TRACKING_STARTED");
+    expect(live.journeyPhases.map((p) => p.label)).toEqual(["Programado", "Corredor", "CDR"]);
     const fromHelper = journeyLiveToPhases(twin.journey_live);
     expect(fromHelper).toHaveLength(3);
   });
@@ -297,5 +309,255 @@ describe("Sprint 3C.5F Digital Twin contract", () => {
     expect(view.inside_port_elapsed?.minutes).toBeNull();
     expect(view.stationary_time?.minutes).toBe(0);
     expect(resolveElapsedLabel(view.stationary_time)).toBe("0 min");
+  });
+});
+
+describe("Sprint 3C.5G UX presentation", () => {
+  it("TEST K: route fallback does not contain timeline titles", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      route_nodes: undefined,
+      timeline: [
+        { title: "GPS_LOST", at: "2026-09-13T01:00:00Z" },
+        { title: "TRACKING_STARTED", at: "2026-09-13T02:00:00Z" },
+        { title: "UNKNOWN", at: "2026-09-13T03:00:00Z" },
+        { title: "DISPATCH_CREATED", at: "2026-09-13T04:00:00Z" },
+      ],
+    })!;
+    const nodes = deriveRouteNodes(twin, minimalRow());
+    const blob = nodes.map((n) => n.name).join(" | ").toUpperCase();
+    expect(blob).not.toMatch(/GPS_LOST|TRACKING_STARTED|UNKNOWN|DISPATCH_CREATED|SEÑAL GPS|SEGUIMIENTO INICIADO|DESPACHO/);
+  });
+
+  it("TEST L: route fallback is port → corridor → destination", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      route_nodes: undefined,
+      timeline: [{ title: "GPS_LOST" }, { title: "TRACKING_STARTED" }],
+    })!;
+    const nodes = deriveRouteNodes(twin, minimalRow());
+    expect(nodes.map((n) => n.name)).toEqual(["SPB", "Buenaventura → Yumbo", "CDR Yumbo"]);
+  });
+
+  it("TEST M: window_end_at does not produce IA Rutafy source", () => {
+    const kind = resolveEtaSourceKind({
+      eta: null,
+      windowEndAt: "2026-09-13T22:00:00Z",
+      scheduledAt: "2026-09-13T10:00:00Z",
+      usedIso: "2026-09-13T22:00:00Z",
+    });
+    expect(kind).toBe("ventana");
+    expect(etaSourceBadgeLabel(kind)).toBe("Ventana operativa");
+    expect(etaSourceBadgeLabel(kind)).not.toBe("IA Rutafy");
+  });
+
+  it("TEST N: ETA with model/IA source produces IA Rutafy", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      eta: {
+        eta_at: "2026-09-13T21:00:00Z",
+        source: "model",
+        source_label: "prediction",
+      },
+    })!;
+    expect(twin.eta?.source).toBe("model");
+    const kind = resolveEtaSourceKind({ eta: twin.eta });
+    expect(kind).toBe("ia");
+    expect(etaSourceBadgeLabel(kind)).toBe("IA Rutafy");
+  });
+
+  it("TEST O: expired ETA is presented as expired", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      eta: {
+        eta_at: "2020-01-01T10:00:00Z",
+        source: "window_end_at",
+        is_expired: true,
+      },
+      inferred_truth: { ...e2ePayload.inferred_truth, expected_arrival_cdr: null },
+    })!;
+    const live = buildContainerLiveState(minimalRow(), twin);
+    expect(live.etaExpired).toBe(true);
+    expect(live.etaHero).toBe("ETA vencido");
+    expect(etaSourceBadgeLabel(live.etaSource)).not.toBe("IA Rutafy");
+  });
+
+  it("TEST P: TRACKING_STARTED → Seguimiento iniciado", () => {
+    expect(resolveJourneyStateLabel("TRACKING_STARTED")).toBe("Seguimiento iniciado");
+    expect(resolveOperationalEventLabel("TRACKING_STARTED")).toBe("Seguimiento iniciado");
+  });
+
+  it("TEST Q: DISPATCH_CREATED → Despacho registrado", () => {
+    expect(resolveOperationalEventLabel("DISPATCH_CREATED")).toBe("Despacho registrado");
+  });
+
+  it("TEST R: BV_YUMBO → Buenaventura → Yumbo", () => {
+    expect(resolveCorridorLabel("BV_YUMBO")).toBe("Buenaventura → Yumbo");
+  });
+
+  it("TEST S: technical GPS OFFLINE → Sin señal with HYBRID mode", () => {
+    const twin = normalizeOperationalDigitalTwin(e2ePayload)!;
+    expect(twin.journey_tracking_mode).toBe("HYBRID");
+    expect(resolveTechnicalGpsStatus(twin)).toBe("OFFLINE");
+    expect(resolveGpsStatusLabel(resolveTechnicalGpsStatus(twin))).toBe("Sin señal");
+  });
+
+  it("TEST T: historical GPS_LOST alone does not become current GPS state", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      alerts: [],
+      timeline: [{ title: "GPS_LOST", at: "2026-09-13T01:00:00Z" }],
+      observed_truth: {
+        ...e2ePayload.observed_truth,
+        technical_gps_status: "ONLINE",
+        gps_status: "ONLINE",
+      },
+      gps_status: "ONLINE",
+      driver: { ...e2ePayload.driver, gps_status: "ONLINE" },
+    })!;
+    const drawer = resolveDrawerRiskPresentation(minimalRow({ alerts: [] }), twin);
+    expect(resolveTechnicalGpsStatus(twin)).toBe("ONLINE");
+    expect(resolveGpsStatusLabel(resolveTechnicalGpsStatus(twin))).toBe("Con señal");
+    expect(drawer.activeAlerts.some((a) => /GPS|señal/i.test(a))).toBe(false);
+  });
+
+  it("TEST U: Pronóstico empty when no ETA/inferred arrival/exit/next", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      inferred_truth: {
+        loading_probability: null,
+        expected_exit_port_at: null,
+        expected_arrival_cdr: null,
+        next_expected_event: null,
+      },
+      eta: null,
+      journey_progress: { percent: 10, current_step: "AT_GATE", next_step: null },
+      next_expected_step: null,
+      next_node_label: null,
+    })!;
+    const view = buildDrawerViewFromDigitalTwin(
+      twin,
+      minimalRow({ eta: null, window_end_at: null, scheduled_at: null, destination: null, destination_code: null }),
+    );
+    // Clear any residual next labels from live/humanize of null destination
+    const viewClean = {
+      ...view,
+      next_expected_step_label: null,
+      next_step: null,
+      next_node_label: null,
+      inferred_truth: {
+        loading_probability: null,
+        expected_exit_port_at: null,
+        expected_arrival_cdr: null,
+        next_expected_event: null,
+      },
+      eta_display: {
+        timeLabel: "Sin ETA",
+        subLabel: "",
+        isExpired: false,
+        isWeakFallback: false,
+      },
+    };
+    const items = buildOperationalPredictionItems(viewClean);
+    expect(items).toEqual([]);
+    const blob = items.join(" | ").toLowerCase();
+    expect(blob).not.toMatch(/llegará al cdr|llegada estimada:|en estimado/);
+  });
+
+  it("TEST U2: Pronóstico includes one valid arrival line when expected_arrival_cdr set", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      inferred_truth: {
+        loading_probability: null,
+        expected_exit_port_at: null,
+        expected_arrival_cdr: "2026-09-13T20:00:00Z",
+        next_expected_event: null,
+      },
+      eta: null,
+      journey_progress: { percent: 10, current_step: "AT_GATE", next_step: null },
+      next_expected_step: null,
+      next_node_label: null,
+    })!;
+    const view = buildDrawerViewFromDigitalTwin(twin, minimalRow());
+    const viewClean = {
+      ...view,
+      next_expected_step_label: null,
+      next_step: null,
+      next_node_label: null,
+      inferred_truth: {
+        ...view.inferred_truth,
+        expected_exit_port_at: null,
+        next_expected_event: null,
+        expected_arrival_cdr: "2026-09-13T20:00:00Z",
+      },
+    };
+    const items = buildOperationalPredictionItems(viewClean);
+    const arrivalLines = items.filter((i) => i.startsWith("Llegada estimada:"));
+    expect(arrivalLines).toHaveLength(1);
+    expect(arrivalLines[0]).toMatch(/Llegada estimada:/);
+    expect(arrivalLines[0].toLowerCase()).not.toMatch(/en estimado/);
+  });
+
+  it("TEST V: nextNodeName is not invented as Evento when no next sources", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      next_node_label: null,
+      next_expected_step: null,
+      journey_progress: { percent: 10, current_step: "AT_GATE", next_step: null },
+      inferred_truth: {
+        ...e2ePayload.inferred_truth,
+        next_expected_event: null,
+      },
+    })!;
+    const live = buildContainerLiveState(
+      minimalRow({ destination: null, destination_code: null }),
+      twin,
+    );
+    expect(live.nextNodeName).not.toBe("Evento");
+    expect(live.nextNodeName).toBe("Sin destino");
+  });
+
+  it("TEST W: historical AT_GATE ignores current_location SPIA", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      current_location: {
+        node_code: "SPIA_GATE",
+        name: "SPIA Entrada/Salida",
+        lat: 3.89,
+        lng: -77.07,
+      },
+      timeline: [{ title: "AT_GATE", at: "2026-09-13T12:51:00Z" }],
+    })!;
+    const live = buildContainerLiveState(minimalRow(), twin);
+    expect(live.timeline[0]?.title).toBe("En ingreso al puerto");
+    expect(live.timeline[0]?.title).not.toBe("Llegó a la entrada de SPIA");
+
+    const view = buildDrawerViewFromDigitalTwin(twin, minimalRow());
+    expect(view.timeline[0]?.title).toBe("En ingreso al puerto");
+    expect(view.timeline[0]?.title).not.toBe("Llegó a la entrada de SPIA");
+  });
+
+  it("TEST X: per-event SPIA metadata unsupported — contract has no node fields", () => {
+    // OperationalDigitalTwinTimelineEvent: at | title | detail | phase only.
+    // Extra payload fields like node_code are dropped by normalizeTimeline.
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      timeline: [
+        {
+          title: "AT_GATE",
+          at: "2026-09-13T12:51:00Z",
+          node_code: "SPIA_GATE",
+          name: "SPIA Entrada/Salida",
+        },
+      ],
+    })!;
+    expect(twin.timeline[0]?.title).toBe("AT_GATE");
+    expect(
+      Object.prototype.hasOwnProperty.call(twin.timeline[0], "node_code"),
+    ).toBe(false);
+    const live = buildContainerLiveState(minimalRow(), twin);
+    // Without normalized event geography → generic label (not inventable from current_location)
+    expect(live.timeline[0]?.title).toBe("En ingreso al puerto");
+    // Implementable only after extending OperationalDigitalTwinTimelineEvent + normalizer.
   });
 });

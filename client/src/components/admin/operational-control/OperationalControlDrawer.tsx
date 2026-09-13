@@ -16,7 +16,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatGpsAge, formatOperationalDateTime, gpsStatusDisplay } from "@/lib/operationalControlConstants";
+import { formatGpsAge, formatOperationalDateTime } from "@/lib/operationalControlConstants";
 import {
   formatDestinationLabel,
   formatScheduledLabel,
@@ -33,12 +33,13 @@ import {
   type OperationalDrawerViewModel,
 } from "@/lib/operationalDrawerViewModel";
 import {
-  journeyTrackingModeLabel,
-  resolveDriverIdentity,
+  resolveCorridorLabel,
   resolveElapsedLabel,
-  resolveOperationalPhaseLabel,
-  resolveTechnicalGpsStatus,
+  resolveGpsStatusLabel,
+  resolveJourneyStateLabel,
+  resolveOperationalEventLabel,
 } from "@/lib/operationalTwinContract";
+import { formatEtaHero } from "@/lib/operationalTwinUx";
 import { TIMELINE_OPERATION_STEPS } from "@/lib/operationalControlUx";
 import { AlertTriangle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -54,8 +55,14 @@ function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="text-gray-500 text-xs">{label}</p>
-      <p className="font-semibold text-sm text-[#1E3A5F]">{value}</p>
+      <p className="font-semibold text-[15px] text-[#1E3A5F] leading-snug">{value}</p>
     </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-xs font-bold uppercase tracking-wide text-gray-500">{children}</p>
   );
 }
 
@@ -126,7 +133,19 @@ export function OperationalControlDrawer({
   const timelineItems =
     view && view.timeline.length > 0
       ? view.timeline
-      : TIMELINE_OPERATION_STEPS.map((title) => ({ title, at: null, detail: null }));
+      : TIMELINE_OPERATION_STEPS.map((stepTitle) => ({ title: stepTitle, at: null, detail: null }));
+
+  const locationLabel =
+    view?.current_location?.name?.trim() ||
+    view?.current_node_label?.trim() ||
+    "Sin ubicación";
+
+  const corridorLabel =
+    view?.corridor_label ||
+    resolveCorridorLabel(view?.journey_corridor_code, view?.corridor_name);
+
+  const journeyStateLabel =
+    view?.journey_state_label || resolveJourneyStateLabel(view?.journey_state);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -162,7 +181,6 @@ export function OperationalControlDrawer({
                   {[
                     ["operacion", "Operación"],
                     ["ruta", "Ruta"],
-                    ["prediccion", "Predicción"],
                     ["historial", "Historial"],
                     ["mapa", "Mapa"],
                     ["auditoria", "Auditoría"],
@@ -170,7 +188,7 @@ export function OperationalControlDrawer({
                     <TabsTrigger
                       key={value}
                       value={value}
-                      className="text-xs data-[state=active]:bg-[#1E3A5F] data-[state=active]:text-white"
+                      className="text-sm data-[state=active]:bg-[#1E3A5F] data-[state=active]:text-white"
                     >
                       {label}
                     </TabsTrigger>
@@ -178,79 +196,81 @@ export function OperationalControlDrawer({
                 </TabsList>
 
                 <TabsContent value="operacion" className="mt-4 space-y-5">
-                  <OperationalJourneyBar
-                    phases={view.journey_phases}
-                    percent={progressPercent}
-                  />
+                  {view.journey_phases.length > 0 ? (
+                    <OperationalJourneyBar
+                      phases={view.journey_phases}
+                      percent={progressPercent}
+                    />
+                  ) : null}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <OperationalNodeFlow
                       vertical
-                      current={view.current_node_label ?? "Sin ubicación"}
+                      current={locationLabel}
                       next={view.next_node_label ?? "Sin destino"}
                       minutesToNext={view.minutes_to_next}
                     />
                     <OperationalEtaHero
                       size="lg"
-                      time={view.eta_display.timeLabel === "Sin ETA" ? "—" : formatEtaFromView(view)}
-                      corridorName={view.corridor_name}
+                      time={
+                        view.eta_display.isExpired
+                          ? formatEtaFromView(view)
+                          : view.eta_display.timeLabel === "Sin ETA"
+                            ? "—"
+                            : formatEtaFromView(view)
+                      }
+                      corridorName={corridorLabel}
                       source={view.eta_source}
-                      expired={view.eta_display.isExpired}
+                      expired={view.eta_display.isExpired || view.eta_display.timeLabel === "ETA vencido"}
                     />
                   </div>
+
                   <div className="space-y-1">
-                    <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
-                      Estado operacional
-                    </p>
-                    <p className="text-sm font-semibold text-[#1E3A5F]">
+                    <SectionLabel>Estado operacional</SectionLabel>
+                    <p className="text-[15px] font-semibold text-[#1E3A5F]">
                       {view.current_phase_label?.trim() || "Sin estado"}
                     </p>
-                    {view.operational_phase ? (
-                      <p className="text-[11px] font-mono text-gray-400">
-                        Micro: {view.operational_phase}
-                      </p>
-                    ) : null}
                   </div>
-                  {(view.journey_state ||
+
+                  {(journeyStateLabel ||
                     view.journey_current_leg != null ||
                     view.journey_tracking_mode_label ||
-                    view.journey_corridor_code) && (
-                    <div className="rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2.5 space-y-1.5 text-sm">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                        Journey
-                      </p>
-                      {view.journey_state ? (
+                    corridorLabel) && (
+                    <div className="rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-3 space-y-1.5 text-sm">
+                      <SectionLabel>Viaje</SectionLabel>
+                      {journeyStateLabel ? (
                         <p>
                           <span className="text-gray-500">Estado: </span>
-                          <span className="font-mono font-medium text-[#1E3A5F]">
-                            {view.journey_state}
+                          <span className="font-medium text-[#1E3A5F] text-[15px]">
+                            {journeyStateLabel}
                           </span>
+                        </p>
+                      ) : null}
+                      {corridorLabel ? (
+                        <p>
+                          <span className="text-gray-500">Tramo: </span>
+                          <span className="font-medium text-[15px]">{corridorLabel}</span>
                         </p>
                       ) : null}
                       {view.journey_current_leg != null ? (
                         <p>
-                          <span className="text-gray-500">Leg: </span>
+                          <span className="text-gray-500">Tramo nº: </span>
                           <span className="font-medium tabular-nums">{view.journey_current_leg}</span>
-                        </p>
-                      ) : null}
-                      {view.journey_corridor_code ? (
-                        <p>
-                          <span className="text-gray-500">Corredor: </span>
-                          <span className="font-mono text-xs">{view.journey_corridor_code}</span>
                         </p>
                       ) : null}
                       {view.journey_tracking_mode_label ? (
                         <p>
-                          <span className="text-gray-500">Tracking: </span>
+                          <span className="text-gray-500">Seguimiento: </span>
                           <span className="font-medium">{view.journey_tracking_mode_label}</span>
                         </p>
                       ) : null}
                     </div>
                   )}
-                  <OperationalRiskLive risk={view.risk_presentation} />
+
                   <div className="grid grid-cols-2 gap-3 text-sm border-t pt-3">
                     <Field
-                      label="GPS técnico"
-                      value={gpsStatusDisplay(
+                      label="GPS"
+                      value={resolveGpsStatusLabel(
                         view.technical_gps_status ?? view.gps_status,
                       )}
                     />
@@ -262,72 +282,75 @@ export function OperationalControlDrawer({
                       <Field label="Conductor" value={view.driver_name} />
                     ) : null}
                     {view.plate ? <Field label="Placa" value={view.plate} /> : null}
-                    {view.driver_phone ? (
-                      <Field label="Teléfono" value={view.driver_phone} />
-                    ) : null}
                     {view.driver_vehicle_type ? (
                       <Field label="Vehículo" value={view.driver_vehicle_type} />
                     ) : null}
+                    {view.driver_phone ? (
+                      <Field label="Teléfono" value={view.driver_phone} />
+                    ) : null}
                   </div>
+
+                  <OperationalRiskLive
+                    risk={view.risk_presentation}
+                    activeAlerts={view.active_alerts}
+                  />
+
                   {(resolveElapsedLabel(view.inside_port_elapsed) ||
                     resolveElapsedLabel(view.cdr_elapsed) ||
                     resolveElapsedLabel(view.stationary_time)) && (
-                    <div className="grid grid-cols-3 gap-2 rounded-lg border border-gray-100 px-3 py-2 text-xs">
+                    <div className="grid grid-cols-3 gap-2 rounded-lg border border-gray-100 px-3 py-2.5 text-sm">
                       {resolveElapsedLabel(view.inside_port_elapsed) ? (
                         <div>
-                          <p className="text-gray-500">En puerto</p>
-                          <p className="font-semibold tabular-nums">
+                          <p className="text-xs text-gray-500">En puerto</p>
+                          <p className="font-semibold tabular-nums text-[15px]">
                             {resolveElapsedLabel(view.inside_port_elapsed)}
                           </p>
                         </div>
                       ) : null}
                       {resolveElapsedLabel(view.cdr_elapsed) ? (
                         <div>
-                          <p className="text-gray-500">En CDR</p>
-                          <p className="font-semibold tabular-nums">
+                          <p className="text-xs text-gray-500">En CDR</p>
+                          <p className="font-semibold tabular-nums text-[15px]">
                             {resolveElapsedLabel(view.cdr_elapsed)}
                           </p>
                         </div>
                       ) : null}
                       {resolveElapsedLabel(view.stationary_time) ? (
                         <div>
-                          <p className="text-gray-500">Estático</p>
-                          <p className="font-semibold tabular-nums">
+                          <p className="text-xs text-gray-500">Estático</p>
+                          <p className="font-semibold tabular-nums text-[15px]">
                             {resolveElapsedLabel(view.stationary_time)}
                           </p>
                         </div>
                       ) : null}
                     </div>
                   )}
-                  {view.current_location?.name || view.current_location?.node_code ? (
-                    <p className="text-xs text-gray-500">
-                      Ubicación:{" "}
-                      <span className="font-medium text-gray-800">
-                        {[view.current_location.name, view.current_location.node_code]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    </p>
-                  ) : null}
+
+                  <OperationalPredictionPanel view={view} title="Pronóstico" />
                 </TabsContent>
 
                 <TabsContent value="ruta" className="mt-4">
                   <OperationalRouteVertical nodes={view.route_nodes} />
                 </TabsContent>
 
-                <TabsContent value="prediccion" className="mt-4">
-                  <OperationalPredictionPanel view={view} />
-                </TabsContent>
-
                 <TabsContent value="historial" className="mt-4">
                   {view.history.length > 0 ? (
                     <div className="space-y-2 mb-6">
-                      <p className="text-xs font-semibold text-gray-500 uppercase">Intentos anteriores</p>
+                      <p className="text-xs font-semibold text-gray-500 uppercase">
+                        Intentos anteriores
+                      </p>
                       {view.history.map((ev, i) => (
-                        <div key={`${ev.title}-${i}`} className="rounded-lg border bg-gray-50 px-3 py-2 text-sm">
-                          <p className="font-medium">{ev.title}</p>
+                        <div
+                          key={`${ev.title}-${i}`}
+                          className="rounded-lg border bg-gray-50 px-3 py-2 text-sm"
+                        >
+                          <p className="font-medium text-[15px]">
+                            {resolveOperationalEventLabel(ev.title)}
+                          </p>
                           {ev.at ? (
-                            <p className="text-xs text-gray-500">{formatOperationalDateTime(ev.at)}</p>
+                            <p className="text-xs text-gray-500">
+                              {formatOperationalDateTime(ev.at)}
+                            </p>
                           ) : null}
                         </div>
                       ))}
@@ -346,38 +369,91 @@ export function OperationalControlDrawer({
 
                 <TabsContent value="auditoria" className="mt-4 space-y-6">
                   <section className="space-y-3">
-                    <h3 className="text-sm font-semibold text-[#1E3A5F]">Verdad declarada</h3>
+                    <h3 className="text-base font-semibold text-[#1E3A5F]">Verdad declarada</h3>
                     <div className="grid grid-cols-2 gap-3">
                       <Field label="Puerto" value={drawerPortLabel(view)} />
                       <Field label="Destino" value={drawerDestinationLabel(view)} />
-                      <Field label="Programado" value={formatScheduledLabel(view.declared_truth.scheduled_at)} />
-                      <Field label="Conductor" value={view.declared_truth.driver_name?.trim() || "Sin conductor"} />
-                      <Field label="Placa" value={view.declared_truth.plate?.trim() || "Sin placa"} />
+                      <Field
+                        label="Programado"
+                        value={formatScheduledLabel(view.declared_truth.scheduled_at)}
+                      />
+                      <Field
+                        label="Conductor"
+                        value={view.declared_truth.driver_name?.trim() || "Sin conductor"}
+                      />
+                      <Field
+                        label="Placa"
+                        value={view.declared_truth.plate?.trim() || "Sin placa"}
+                      />
+                      {view.declared_truth.status_raw ? (
+                        <Field label="Status raw" value={view.declared_truth.status_raw} />
+                      ) : null}
                     </div>
                   </section>
                   <section className="space-y-3">
-                    <h3 className="text-sm font-semibold text-[#1E3A5F]">Verdad observada</h3>
+                    <h3 className="text-base font-semibold text-[#1E3A5F]">Verdad observada</h3>
                     <div className="grid grid-cols-2 gap-3">
-                      <Field label="Último evento" value={view.observed_truth.last_event_type?.trim() || "Sin evento"} />
+                      <Field
+                        label="Estado operacional"
+                        value={
+                          view.operational_phase
+                            ? `${view.operational_phase}${
+                                view.current_phase_label
+                                  ? ` · ${view.current_phase_label}`
+                                  : ""
+                              }`
+                            : view.current_phase_label || "Sin estado"
+                        }
+                      />
+                      <Field
+                        label="Estado Journey"
+                        value={
+                          view.journey_state
+                            ? `${view.journey_state}${
+                                journeyStateLabel ? ` · ${journeyStateLabel}` : ""
+                              }`
+                            : "Sin journey"
+                        }
+                      />
+                      <Field
+                        label="Último evento"
+                        value={view.observed_truth.last_event_type?.trim() || "Sin evento"}
+                      />
                       <Field
                         label="Evento operacional"
                         value={
-                          view.observed_truth.last_operational_event_type?.trim() ||
-                          "Sin evento"
+                          view.observed_truth.last_operational_event_type?.trim() || "Sin evento"
                         }
                       />
-                      <Field label="Hora" value={formatTimeLabel(view.observed_truth.last_event_at)} />
-                      <Field label="Nodo actual" value={view.observed_truth.current_node_code?.trim() || view.current_node_label || "Sin nodo"} />
-                      <Field label="Dentro del puerto" value={formatBooleanLabel(view.observed_truth.inside_port)} />
-                      <Field label="Carga inferida" value={formatBooleanLabel(view.observed_truth.loading_inferred)} />
+                      <Field
+                        label="Hora"
+                        value={formatTimeLabel(view.observed_truth.last_event_at)}
+                      />
+                      <Field
+                        label="Nodo"
+                        value={
+                          view.observed_truth.current_node_code?.trim() ||
+                          view.current_location?.node_code ||
+                          "Sin nodo"
+                        }
+                      />
+                      <Field
+                        label="Corredor"
+                        value={view.journey_corridor_code?.trim() || "Sin corredor"}
+                      />
+                      <Field
+                        label="Dentro del puerto"
+                        value={formatBooleanLabel(view.observed_truth.inside_port)}
+                      />
                       <Field
                         label="GPS técnico"
-                        value={gpsStatusDisplay(
+                        value={
                           view.observed_truth.technical_gps_status ??
-                            view.technical_gps_status ??
-                            view.observed_truth.gps_status ??
-                            view.gps_status,
-                        )}
+                          view.technical_gps_status ??
+                          view.observed_truth.gps_status ??
+                          view.gps_status ??
+                          "—"
+                        }
                       />
                       {view.observed_truth.monitoring_status ? (
                         <Field
@@ -388,17 +464,34 @@ export function OperationalControlDrawer({
                     </div>
                   </section>
                   <section className="space-y-3">
-                    <h3 className="text-sm font-semibold text-[#1E3A5F]">Verdad inferida</h3>
+                    <h3 className="text-base font-semibold text-[#1E3A5F]">Verdad inferida</h3>
                     <div className="grid grid-cols-2 gap-3">
-                      <Field label="Prob. carga" value={formatProbability(view.inferred_truth.loading_probability)} />
-                      <Field label="Salida puerto est." value={formatTimeLabel(view.inferred_truth.expected_exit_port_at)} />
-                      <Field label="Llegada CDR est." value={formatTimeLabel(view.inferred_truth.expected_arrival_cdr)} />
-                      <Field label="Próximo evento" value={view.inferred_truth.next_expected_event?.trim() || "Sin evento"} />
+                      <Field
+                        label="Prob. carga"
+                        value={formatProbability(view.inferred_truth.loading_probability)}
+                      />
+                      <Field
+                        label="Salida puerto est."
+                        value={formatTimeLabel(view.inferred_truth.expected_exit_port_at)}
+                      />
+                      <Field
+                        label="Llegada CDR est."
+                        value={formatTimeLabel(view.inferred_truth.expected_arrival_cdr)}
+                      />
+                      <Field
+                        label="Próximo evento"
+                        value={
+                          view.inferred_truth.next_expected_event?.trim()
+                            ? `${view.inferred_truth.next_expected_event} · ${resolveOperationalEventLabel(view.inferred_truth.next_expected_event)}`
+                            : "Sin evento"
+                        }
+                      />
                     </div>
                   </section>
                   {view.declared_truth.destination_code ? (
                     <p className="text-xs text-gray-400">
-                      Destino declarado: {formatDestinationLabel(view.declared_truth.destination_code)}
+                      Destino declarado:{" "}
+                      {formatDestinationLabel(view.declared_truth.destination_code)}
                     </p>
                   ) : null}
                 </TabsContent>
@@ -412,18 +505,20 @@ export function OperationalControlDrawer({
 }
 
 function formatEtaFromView(view: OperationalDrawerViewModel): string {
+  if (view.eta_display.isExpired) {
+    const iso = view.inferred_truth.expected_arrival_cdr;
+    if (iso) {
+      const hero = formatEtaHero(iso);
+      return hero !== "—" ? hero : "ETA vencido";
+    }
+    return "ETA vencido";
+  }
   const iso =
     view.inferred_truth.expected_arrival_cdr ||
     (view.eta_display.isWeakFallback ? null : view.declared_truth.scheduled_at);
   if (iso) {
-    const ms = Date.parse(iso);
-    if (Number.isFinite(ms)) {
-      return new Date(ms).toLocaleTimeString("es-CO", {
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      });
-    }
+    const hero = formatEtaHero(iso);
+    if (hero !== "—") return hero;
   }
   return view.eta_display.timeLabel;
 }

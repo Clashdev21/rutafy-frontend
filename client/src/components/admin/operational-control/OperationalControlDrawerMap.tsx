@@ -33,22 +33,25 @@ function createMarker(
   fillColor: string,
   label: string,
   title: string,
+  options?: { emphasize?: boolean },
 ): google.maps.Marker | null {
   if (!isGoogleMapsApiAvailable()) return null;
   try {
     const maps = window.google!.maps!;
+    const emphasize = Boolean(options?.emphasize);
     return new maps.Marker({
       map,
       position,
       title,
-      label: { text: label, color: "#fff", fontWeight: "bold", fontSize: "10px" },
+      label: { text: label, color: "#fff", fontWeight: "bold", fontSize: "11px" },
+      zIndex: emphasize ? 999 : 1,
       icon: {
         path: maps.SymbolPath.CIRCLE,
-        scale: 12,
+        scale: emphasize ? 16 : 12,
         fillColor,
         fillOpacity: 1,
-        strokeColor: "#fff",
-        strokeWeight: 2,
+        strokeColor: emphasize ? "#0c4a6e" : "#fff",
+        strokeWeight: emphasize ? 4 : 2,
       },
     });
   } catch {
@@ -90,9 +93,10 @@ export function OperationalControlDrawerMap({
       color: string,
       label: string,
       title: string,
+      emphasize = false,
     ) => {
       if (!point) return;
-      const marker = createMarker(gmap, point, color, label, title);
+      const marker = createMarker(gmap, point, color, label, title, { emphasize });
       if (marker) markersRef.current.push(marker);
       bounds.extend(point);
       hasPoint = true;
@@ -100,19 +104,28 @@ export function OperationalControlDrawerMap({
 
     const operational = resolveOperationalMapMarker(map, currentLocation);
     if (operational) {
-      const titleParts = [operational.label, operational.code].filter(Boolean);
+      const human = operational.label?.trim() || "Ubicación actual";
+      const title =
+        operational.code && operational.code !== operational.label
+          ? `${human} (${operational.code})`
+          : human;
       addPoint(
         { lat: operational.lat, lng: operational.lng },
         operational.source === "current_location" ? COLOR_CURRENT : COLOR_DRIVER,
-        operational.source === "current_location" ? "U" : "C",
-        titleParts.join(" · ") ||
-          (operational.source === "current_location" ? "Ubicación actual" : "Conductor"),
+        "●",
+        title,
+        true,
       );
     }
 
-    addPoint(map.declared_port, COLOR_DECLARED, "D", map.declared_port?.label ?? "Puerto declarado");
+    addPoint(
+      map.declared_port,
+      COLOR_DECLARED,
+      "O",
+      map.declared_port?.label ?? "Origen declarado",
+    );
     addPoint(map.confirmed_port, COLOR_CONFIRMED, "P", map.confirmed_port?.label ?? "Puerto confirmado");
-    addPoint(map.destination, COLOR_DEST, "F", map.destination?.label ?? "Destino");
+    addPoint(map.destination, COLOR_DEST, "D", map.destination?.label ?? "Destino");
 
     if (map.polyline.length >= 2) {
       polylineRef.current = new window.google!.maps!.Polyline({
@@ -177,11 +190,27 @@ export function OperationalControlDrawerMap({
   }
 
   return (
-    <MapView
-      className={cn("h-80 rounded-lg border border-slate-200 overflow-hidden", className)}
-      initialCenter={DEFAULT_CENTER}
-      initialZoom={12}
-      onMapReady={handleMapReady}
-    />
+    <div className={cn("space-y-2", className)}>
+      <MapView
+        className={cn("h-80 rounded-lg border border-slate-200 overflow-hidden")}
+        initialCenter={DEFAULT_CENTER}
+        initialZoom={12}
+        onMapReady={handleMapReady}
+      />
+      <p className="text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-1 px-0.5">
+        <span>
+          <span className="inline-block h-2 w-2 rounded-full bg-sky-500 mr-1" aria-hidden />
+          Ubicación actual
+        </span>
+        <span>
+          <span className="inline-block h-2 w-2 rounded-full bg-yellow-500 mr-1" aria-hidden />
+          Origen declarado
+        </span>
+        <span>
+          <span className="inline-block h-2 w-2 rounded-full bg-[#1e3a5f] mr-1" aria-hidden />
+          Destino
+        </span>
+      </p>
+    </div>
   );
 }
