@@ -54,7 +54,7 @@ export function OperationalControlCommandSearch({
       >
         <Search className="h-5 w-5 text-[#2A9D8F] shrink-0" aria-hidden />
         <span className="flex-1 text-sm text-gray-500">
-          {query.trim() ? query : "Buscar contenedor…"}
+          {query.trim() ? query : "Buscar contenedor, placa o conductor..."}
         </span>
         <kbd className="hidden sm:inline-flex h-6 items-center rounded border border-gray-200 bg-gray-50 px-2 text-[10px] text-gray-500">
           Ctrl+K
@@ -65,10 +65,10 @@ export function OperationalControlCommandSearch({
         open={open}
         onOpenChange={setOpen}
         title="Buscar contenedor"
-        description="Buscar por contenedor, placa, conductor, cédula o programa"
+        description="Buscar por contenedor, placa o conductor"
       >
         <CommandInput
-          placeholder="Contenedor, placa, conductor, cédula, programa…"
+          placeholder="Buscar contenedor, placa o conductor..."
           value={query}
           onValueChange={onQueryChange}
         />

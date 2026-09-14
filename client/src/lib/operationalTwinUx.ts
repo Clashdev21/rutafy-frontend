@@ -221,7 +221,12 @@ export function resolveRiskPresentation(
 export function resolveDrawerRiskPresentation(
   row: OperationalControlContainerRow,
   twin?: OperationalDigitalTwin | null,
-): { risk: RiskPresentation; activeAlerts: string[] } {
+): {
+  risk: RiskPresentation;
+  activeAlerts: string[];
+  /** Structured 3C.5G.2 elevation — not derived from UI copy. GPS alone stays false. */
+  requiresOperationalAttention: boolean;
+} {
   const band = deriveRiskBand(row);
   const technical = resolveTechnicalGpsStatus(twin)?.toUpperCase() ?? "";
   const twinReasons = twin?.risk?.reasons ?? [];
@@ -286,13 +291,19 @@ export function resolveDrawerRiskPresentation(
   // If NEGATIVE + NORMAL coexist, keep only NEGATIVE (do not mutate payload).
   const reasons = negatives.length > 0 ? negatives : normals;
 
-  // Operational risk title: GPS alerts and row band alone must NOT elevate.
+  // Structured elevation (business rule): GPS alerts and row band alone must NOT elevate.
+  const isCriticalOperational =
+    band === "critical" || negatives.some((r) => /cr[ií]tico|critical|riesgo/i.test(r));
+  const requiresOperationalAttention =
+    isCriticalOperational || negatives.length > 0 || operationalAlerts.length > 0;
+
+  // Presentation labels follow the structured flag (copy is UI-only).
   let label = "Normal";
   let emoji = "🟢";
-  if (band === "critical" || negatives.some((r) => /cr[ií]tico|critical|riesgo/i.test(r))) {
+  if (isCriticalOperational) {
     label = "Riesgo";
     emoji = "🔴";
-  } else if (negatives.length > 0 || operationalAlerts.length > 0) {
+  } else if (requiresOperationalAttention) {
     label = "Atención";
     emoji = "🟡";
   } else if (normals.length > 0) {
@@ -304,6 +315,7 @@ export function resolveDrawerRiskPresentation(
   return {
     risk: { band, emoji, label, reasons },
     activeAlerts,
+    requiresOperationalAttention,
   };
 }
 

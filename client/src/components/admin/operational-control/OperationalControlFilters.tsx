@@ -1,5 +1,11 @@
 import type { OperationalControlFilterOptions } from "@/api/operational-control";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -9,118 +15,156 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RUTAFY_STATUS_LABELS } from "@/lib/operationalControlConstants";
+import {
+  EMPTY_OPERATIONAL_FILTERS,
+  TOWER_FILTER_LABELS,
+  availableTowerFilterKeys,
+  hasActiveFilterValues,
+  type OperationalControlFiltersState,
+  type TowerFilterKey,
+} from "@/lib/operationalTowerVisibleFilters";
+import { Plus, X } from "lucide-react";
 
-export type OperationalControlFiltersState = {
-  client: string;
-  program: string;
-  status: string;
-  port: string;
-  driver: string;
-  plate: string;
-  date: string;
-};
-
-export const EMPTY_OPERATIONAL_FILTERS: OperationalControlFiltersState = {
-  client: "all",
-  program: "all",
-  status: "all",
-  port: "all",
-  driver: "all",
-  plate: "all",
-  date: "",
-};
+export type { OperationalControlFiltersState, TowerFilterKey };
+export { EMPTY_OPERATIONAL_FILTERS };
 
 type Props = {
   filters: OperationalControlFiltersState;
+  visibleFilters: TowerFilterKey[];
   options?: OperationalControlFilterOptions;
   onChange: (next: OperationalControlFiltersState) => void;
-  onClear: () => void;
+  onClearValues: () => void;
+  onAddFilter: (key: TowerFilterKey) => void;
+  onRemoveFilter: (key: TowerFilterKey) => void;
+  /** When true, only render the + Filtro trigger (for toolbar next to search). */
+  addOnly?: boolean;
 };
+
+export function OperationalControlFilterAddButton({
+  visibleFilters,
+  onAddFilter,
+}: {
+  visibleFilters: TowerFilterKey[];
+  onAddFilter: (key: TowerFilterKey) => void;
+}) {
+  const available = availableTowerFilterKeys(visibleFilters);
+  if (available.length === 0) return null;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" className="h-[50px] shrink-0 gap-1.5 px-3">
+          <Plus className="h-4 w-4" aria-hidden />
+          Filtro
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-[160px]">
+        {available.map((key) => (
+          <DropdownMenuItem key={key} onSelect={() => onAddFilter(key)}>
+            {TOWER_FILTER_LABELS[key]}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 export function OperationalControlFilters({
   filters,
+  visibleFilters,
   options,
   onChange,
-  onClear,
-}: Props) {
+  onClearValues,
+  onRemoveFilter,
+}: Omit<Props, "onAddFilter" | "addOnly">) {
   const statusOptions = options?.statuses?.length
     ? options.statuses
     : Object.keys(RUTAFY_STATUS_LABELS);
 
-  const hasActive =
-    filters.client !== "all" ||
-    filters.program !== "all" ||
-    filters.status !== "all" ||
-    filters.port !== "all" ||
-    filters.driver !== "all" ||
-    filters.plate !== "all" ||
-    Boolean(filters.date.trim());
+  const hasActive = hasActiveFilterValues(filters);
 
-  const compactSelect = (
-    label: string,
-    value: string,
-    opts: string[],
-    onValueChange: (v: string) => void,
-  ) => (
-    <div className="space-y-1 min-w-[130px] flex-1">
-      <p className="text-[10px] font-medium text-gray-500 uppercase">{label}</p>
-      <Select value={value || "all"} onValueChange={onValueChange}>
-        <SelectTrigger className="h-9 text-xs">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Todos</SelectItem>
-          {opts.map((opt) => (
-            <SelectItem key={opt} value={opt}>
-              {opt}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
+  if (visibleFilters.length === 0 && !hasActive) {
+    return null;
+  }
+
+  const optionsFor = (key: TowerFilterKey): string[] => {
+    switch (key) {
+      case "client":
+        return options?.clients ?? [];
+      case "program":
+        return options?.programs ?? [];
+      case "status":
+        return statusOptions;
+      case "port":
+        return options?.ports ?? [];
+      case "driver":
+        return options?.drivers ?? [];
+      case "plate":
+        return options?.plates ?? [];
+      case "date":
+        return [];
+    }
+  };
+
+  const valueFor = (key: TowerFilterKey): string => {
+    if (key === "date") return filters.date;
+    return filters[key] || "all";
+  };
+
+  const setValue = (key: TowerFilterKey, value: string) => {
+    if (key === "date") {
+      onChange({ ...filters, date: value });
+      return;
+    }
+    onChange({ ...filters, [key]: value });
+  };
 
   return (
-    <div className="rounded-xl border border-gray-100 bg-white/80 p-3 space-y-3">
-      <div className="flex flex-wrap gap-2 items-end">
-        {compactSelect("Cliente", filters.client, options?.clients ?? [], (v) =>
-          onChange({ ...filters, client: v }),
-        )}
-        {compactSelect("Programa", filters.program, options?.programs ?? [], (v) =>
-          onChange({ ...filters, program: v }),
-        )}
-        {compactSelect("Estado", filters.status, statusOptions, (v) =>
-          onChange({ ...filters, status: v }),
-        )}
-        {compactSelect("Puerto", filters.port, options?.ports ?? [], (v) =>
-          onChange({ ...filters, port: v }),
-        )}
-        {compactSelect("Conductor", filters.driver, options?.drivers ?? [], (v) =>
-          onChange({ ...filters, driver: v }),
-        )}
-        {compactSelect("Placa", filters.plate, options?.plates ?? [], (v) =>
-          onChange({ ...filters, plate: v }),
-        )}
-        <div className="space-y-1 min-w-[130px]">
-          <p className="text-[10px] font-medium text-gray-500 uppercase">Fecha</p>
-          <Input
-            type="date"
-            className="h-9 text-xs"
-            value={filters.date}
-            onChange={(e) => onChange({ ...filters, date: e.target.value })}
-          />
+    <div className="flex flex-wrap gap-2 items-end">
+      {visibleFilters.map((key) => (
+        <div key={key} className="space-y-1 min-w-[140px] flex-1 sm:flex-none sm:max-w-[180px]">
+          <div className="flex items-center justify-between gap-1">
+            <p className="text-[10px] font-medium text-gray-500 uppercase">
+              {TOWER_FILTER_LABELS[key]}
+            </p>
+            <button
+              type="button"
+              className="rounded p-0.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+              aria-label={`Quitar filtro ${TOWER_FILTER_LABELS[key]}`}
+              onClick={() => onRemoveFilter(key)}
+            >
+              <X className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          </div>
+          {key === "date" ? (
+            <Input
+              type="date"
+              className="h-9 text-xs"
+              value={valueFor(key)}
+              onChange={(e) => setValue(key, e.target.value)}
+            />
+          ) : (
+            <Select value={valueFor(key)} onValueChange={(v) => setValue(key, v)}>
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {optionsFor(key).map((opt) => (
+                  <SelectItem key={opt} value={opt}>
+                    {opt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-9"
-          disabled={!hasActive}
-          onClick={onClear}
-        >
+      ))}
+      {hasActive ? (
+        <Button type="button" variant="ghost" size="sm" className="h-9" onClick={onClearValues}>
           Limpiar filtros
         </Button>
-      </div>
+      ) : null}
     </div>
   );
 }

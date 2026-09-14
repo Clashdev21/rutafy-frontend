@@ -1,13 +1,12 @@
 import { OperationalControlCommandSearch } from "@/components/admin/operational-control/OperationalControlCommandSearch";
 import { OperationalControlDrawer } from "@/components/admin/operational-control/OperationalControlDrawer";
 import {
-  EMPTY_OPERATIONAL_FILTERS,
+  OperationalControlFilterAddButton,
   OperationalControlFilters,
-  type OperationalControlFiltersState,
 } from "@/components/admin/operational-control/OperationalControlFilters";
 import { OperationalControlQuickTabs } from "@/components/admin/operational-control/OperationalControlQuickTabs";
 import { OperationalLiveContainerTable } from "@/components/admin/operational-twin/OperationalLiveContainerTable";
-import { OperationalTowerKpiStrip } from "@/components/admin/operational-twin/OperationalTowerKpiStrip";
+import { OperationalTowerSummary } from "@/components/admin/operational-twin/OperationalTowerSummary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useOperationalTwinTower } from "@/hooks/useOperationalTwinTower";
@@ -18,19 +17,37 @@ import {
   filterByQuickTab,
   matchesCommandSearch,
 } from "@/lib/operationalControlUx";
+import { computeTowerSummaryMetrics } from "@/lib/operationalTowerSummary";
+import {
+  EMPTY_OPERATIONAL_FILTERS,
+  addVisibleFilter,
+  loadVisibleFilters,
+  removeVisibleFilter,
+  resetFilterValues,
+  saveVisibleFilters,
+  type OperationalControlFiltersState,
+  type TowerFilterKey,
+} from "@/lib/operationalTowerVisibleFilters";
 import type { ContainerLiveState } from "@/lib/operationalTwinUx";
 import { AlertTriangle, LayoutDashboard, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { QuickTab } from "@/lib/operationalControlUx";
 
 export default function AdminOperationalControlPage() {
   const [filters, setFilters] = useState<OperationalControlFiltersState>(
     EMPTY_OPERATIONAL_FILTERS,
   );
+  const [visibleFilters, setVisibleFilters] = useState<TowerFilterKey[]>(() =>
+    loadVisibleFilters(),
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [quickTab, setQuickTab] = useState<QuickTab>("all");
   const [selectedRow, setSelectedRow] = useState<OperationalControlContainerRow | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    saveVisibleFilters(visibleFilters);
+  }, [visibleFilters]);
 
   const apiParams = useMemo(
     () => ({
@@ -54,45 +71,65 @@ export default function AdminOperationalControlPage() {
     lastUpdatedAt,
     refresh,
     liveStates,
-    towerKpis,
   } = useOperationalTwinTower(apiParams);
 
-  const filteredStates = useMemo(() => {
+  /** Universo tras filtros estructurados (API + client filter). Sin search ni quickTab. */
+  const totalStates = useMemo(() => {
     const filteredRows = clientFilterContainers(containers, filters);
     const allowed = new Set(filteredRows.map((r) => r.container_id));
-    const searched = liveStates.filter((s) => {
-      if (!allowed.has(s.container_id)) return false;
-      return matchesCommandSearch(s.row, searchQuery);
-    });
+    return liveStates.filter((s) => allowed.has(s.container_id));
+  }, [liveStates, containers, filters]);
+
+  /** Tras search; NO incluye quickTab (segmenta solo la tabla). */
+  const summaryVisibleStates = useMemo(() => {
+    return totalStates.filter((s) => matchesCommandSearch(s.row, searchQuery));
+  }, [totalStates, searchQuery]);
+
+  const filteredStates = useMemo(() => {
     const tabIds = new Set(
       filterByQuickTab(
-        searched.map((s) => s.row),
+        summaryVisibleStates.map((s) => s.row),
         quickTab,
       ).map((r) => r.container_id),
     );
-    return searched.filter((s) => tabIds.has(s.container_id));
-  }, [liveStates, containers, filters, searchQuery, quickTab]);
+    return summaryVisibleStates.filter((s) => tabIds.has(s.container_id));
+  }, [summaryVisibleStates, quickTab]);
 
-  const tabBaseRows = useMemo(() => {
-    const filteredRows = clientFilterContainers(containers, filters);
-    const allowed = new Set(filteredRows.map((r) => r.container_id));
-    return liveStates
-      .filter((s) => allowed.has(s.container_id))
-      .filter((s) => matchesCommandSearch(s.row, searchQuery))
-      .map((s) => s.row);
-  }, [liveStates, containers, filters, searchQuery]);
+  const tabBaseRows = useMemo(
+    () => summaryVisibleStates.map((s) => s.row),
+    [summaryVisibleStates],
+  );
 
   const tabCounts = useMemo(() => countByQuickTab(tabBaseRows), [tabBaseRows]);
+
+  const summaryMetrics = useMemo(
+    () => computeTowerSummaryMetrics(totalStates, summaryVisibleStates),
+    [totalStates, summaryVisibleStates],
+  );
 
   const openDrawer = (state: ContainerLiveState) => {
     setSelectedRow(state.row);
     setDrawerOpen(true);
   };
 
+  const handleAddFilter = (key: TowerFilterKey) => {
+    setVisibleFilters((prev) => addVisibleFilter(prev, key));
+  };
+
+  const handleRemoveFilter = (key: TowerFilterKey) => {
+    const next = removeVisibleFilter(visibleFilters, key, filters);
+    setVisibleFilters(next.visibleFilters);
+    setFilters(next.filterValues);
+  };
+
+  const handleClearValues = () => {
+    setFilters(resetFilterValues());
+  };
+
   const showInitialLoading = isLoading && containers.length === 0 && !error;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#1E3A5F] flex items-center gap-2">
@@ -128,15 +165,23 @@ export default function AdminOperationalControlPage() {
         </Button>
       </div>
 
-      <OperationalControlCommandSearch
-        rows={containers}
-        query={searchQuery}
-        onQueryChange={setSearchQuery}
-        onSelect={(row) => {
-          setSelectedRow(row);
-          setDrawerOpen(true);
-        }}
-      />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+        <div className="flex-1 min-w-0">
+          <OperationalControlCommandSearch
+            rows={containers}
+            query={searchQuery}
+            onQueryChange={setSearchQuery}
+            onSelect={(row) => {
+              setSelectedRow(row);
+              setDrawerOpen(true);
+            }}
+          />
+        </div>
+        <OperationalControlFilterAddButton
+          visibleFilters={visibleFilters}
+          onAddFilter={handleAddFilter}
+        />
+      </div>
 
       {showInitialLoading ? (
         <p className="text-sm text-gray-500 py-16 text-center">Cargando torre de control…</p>
@@ -156,13 +201,15 @@ export default function AdminOperationalControlPage() {
             </div>
           ) : null}
 
-          <OperationalTowerKpiStrip kpis={towerKpis} />
+          <OperationalTowerSummary metrics={summaryMetrics} />
 
           <OperationalControlFilters
             filters={filters}
+            visibleFilters={visibleFilters}
             options={filterOptions}
             onChange={setFilters}
-            onClear={() => setFilters(EMPTY_OPERATIONAL_FILTERS)}
+            onClearValues={handleClearValues}
+            onRemoveFilter={handleRemoveFilter}
           />
 
           <OperationalControlQuickTabs
