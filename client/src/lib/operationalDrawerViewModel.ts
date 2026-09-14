@@ -120,6 +120,10 @@ export type OperationalDrawerViewModel = {
   risk_presentation: RiskPresentation;
   active_alerts: string[];
   eta_source: EtaSourceKind;
+  /** True when twin.eta.is_expired or computed clock is past. */
+  eta_expired?: boolean;
+  /** ISO used for ETA clock / última referencia when expired. */
+  eta_reference_iso?: string | null;
   /** Human corridor label for executive UI. */
   corridor_label?: string | null;
   journey_state_label?: string | null;
@@ -252,6 +256,14 @@ export function buildDrawerViewFromDigitalTwin(
     journey_phases: live?.journeyPhases ?? [],
     risk_presentation: live?.drawerRisk ?? resolveRiskPresentationFromRow(row, twin),
     active_alerts: live?.activeAlerts ?? [],
+    eta_reference_iso:
+      operationalEtaAt(twin.eta) ||
+      twin.inferred_truth.expected_arrival_cdr ||
+      row?.window_end_at ||
+      twin.declared_truth.scheduled_at ||
+      row?.eta ||
+      null,
+    eta_expired: live?.etaExpired ?? twin.eta?.is_expired === true,
     eta_source:
       live?.etaSource ??
       resolveEtaSourceKind({
@@ -269,7 +281,7 @@ function resolveRiskPresentationFromRow(
   row?: OperationalControlContainerRow | null,
   twin?: OperationalDigitalTwin | null,
 ) {
-  if (row) return buildContainerLiveState(row, twin ?? null).risk;
+  if (row) return buildContainerLiveState(row, twin ?? null).drawerRisk;
   return { band: "normal" as const, emoji: "🟢", label: "Normal", reasons: [] };
 }
 

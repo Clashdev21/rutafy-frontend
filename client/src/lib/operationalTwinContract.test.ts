@@ -3,6 +3,7 @@ import { normalizeOperationalDigitalTwin } from "@/api/operational-digital-twin"
 import { buildDrawerViewFromDigitalTwin } from "@/lib/operationalDrawerViewModel";
 import {
   etaSourceBadgeLabel,
+  etaSourceExpiredBadgeLabel,
   formatElapsedMinutes,
   journeyLiveToPhases,
   journeyTrackingModeLabel,
@@ -366,11 +367,11 @@ describe("Sprint 3C.5G UX presentation", () => {
     expect(etaSourceBadgeLabel(kind)).toBe("IA Rutafy");
   });
 
-  it("TEST O: expired ETA is presented as expired", () => {
+  it("TEST O: expired ETA keeps historical time and is not IA for window source", () => {
     const twin = normalizeOperationalDigitalTwin({
       ...e2ePayload,
       eta: {
-        eta_at: "2020-01-01T10:00:00Z",
+        eta_at: "2020-01-01T20:00:00Z",
         source: "window_end_at",
         is_expired: true,
       },
@@ -378,8 +379,27 @@ describe("Sprint 3C.5G UX presentation", () => {
     })!;
     const live = buildContainerLiveState(minimalRow(), twin);
     expect(live.etaExpired).toBe(true);
-    expect(live.etaHero).toBe("ETA vencido");
+    expect(live.etaHero).not.toBe("ETA vencido");
+    expect(live.etaHero).toMatch(/\d/);
     expect(etaSourceBadgeLabel(live.etaSource)).not.toBe("IA Rutafy");
+    expect(etaSourceExpiredBadgeLabel(live.etaSource)).toBe("Ventana vencida");
+  });
+
+  it("TEST O2: window_end_at expired badge is Ventana vencida", () => {
+    expect(etaSourceExpiredBadgeLabel("ventana")).toBe("Ventana vencida");
+    const kind = resolveEtaSourceKind({
+      eta: { eta_at: "2020-01-01T10:00:00Z", source: "window_end_at", is_expired: true },
+    });
+    expect(kind).toBe("ventana");
+    expect(etaSourceExpiredBadgeLabel(kind)).toBe("Ventana vencida");
+  });
+
+  it("TEST O3: model expired badge is IA Rutafy vencida", () => {
+    const kind = resolveEtaSourceKind({
+      eta: { eta_at: "2020-01-01T10:00:00Z", source: "model", is_expired: true },
+    });
+    expect(kind).toBe("ia");
+    expect(etaSourceExpiredBadgeLabel(kind)).toBe("IA Rutafy vencida");
   });
 
   it("TEST P: TRACKING_STARTED → Seguimiento iniciado", () => {
@@ -559,5 +579,114 @@ describe("Sprint 3C.5G UX presentation", () => {
     // Without normalized event geography → generic label (not inventable from current_location)
     expect(live.timeline[0]?.title).toBe("En ingreso al puerto");
     // Implementable only after extending OperationalDigitalTwinTimelineEvent + normalizer.
+  });
+
+  it("TEST Y: ENTERED_PORT → Dentro del puerto", () => {
+    expect(resolveOperationalEventLabel("ENTERED_PORT")).toBe("Dentro del puerto");
+  });
+
+  it("TEST Z: AT_GATE → En ingreso al puerto", () => {
+    expect(resolveOperationalPhaseLabel("AT_GATE", null)).toBe("En ingreso al puerto");
+    expect(resolveOperationalEventLabel("AT_GATE")).toBe("En ingreso al puerto");
+  });
+
+  it("TEST AA: next_expected_event ENTERED_PORT → Dentro del puerto", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      next_node_label: null,
+      next_expected_step: null,
+      journey_progress: { percent: 22, current_step: "AT_GATE", next_step: null },
+      inferred_truth: {
+        ...e2ePayload.inferred_truth,
+        next_expected_event: "ENTERED_PORT",
+      },
+    })!;
+    const live = buildContainerLiveState(
+      minimalRow({ destination: null, destination_code: null }),
+      twin,
+    );
+    expect(live.nextNodeName).toBe("Dentro del puerto");
+  });
+
+  it("TEST AB: contradictory reasons keep Retraso omit normal", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      alerts: [],
+      risk: { level: "medium", reasons: ["Retraso", "Operación en curso normal"] },
+      observed_truth: {
+        ...e2ePayload.observed_truth,
+        technical_gps_status: "ONLINE",
+        gps_status: "ONLINE",
+      },
+      gps_status: "ONLINE",
+    })!;
+    const drawer = resolveDrawerRiskPresentation(
+      minimalRow({ alerts: [], gps_status: "ONLINE", risk_band: "normal" }),
+      twin,
+    );
+    expect(drawer.risk.reasons).toContain("Retraso");
+    expect(drawer.risk.reasons.some((r) => /operaci[oó]n en curso normal/i.test(r))).toBe(
+      false,
+    );
+  });
+
+  it("TEST AC: only normal reason may show as normal", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      alerts: [],
+      risk: { level: "low", reasons: ["Operación en curso normal"] },
+      observed_truth: {
+        ...e2ePayload.observed_truth,
+        technical_gps_status: "ONLINE",
+        gps_status: "ONLINE",
+      },
+      gps_status: "ONLINE",
+    })!;
+    const drawer = resolveDrawerRiskPresentation(
+      minimalRow({ alerts: [], gps_status: "ONLINE", risk_band: "normal" }),
+      twin,
+    );
+    expect(drawer.risk.label).toBe("Normal");
+    expect(drawer.risk.reasons).toContain("Operación en curso normal");
+  });
+
+  it("TEST AD: GPS OFFLINE without retraso reason does not invent Retraso", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      alerts: [],
+      risk: { level: "low", reasons: ["GPS activo"] },
+      observed_truth: {
+        ...e2ePayload.observed_truth,
+        technical_gps_status: "OFFLINE",
+      },
+      gps_status: "OFFLINE",
+    })!;
+    const drawer = resolveDrawerRiskPresentation(
+      minimalRow({ alerts: [], gps_status: "OFFLINE" }),
+      twin,
+    );
+    expect(drawer.risk.reasons).not.toContain("Retraso");
+    expect(resolveGpsStatusLabel(resolveTechnicalGpsStatus(twin))).toBe("Sin señal");
+  });
+
+  it("TEST AE: En gate SPIA → Llegó a la entrada de SPIA", () => {
+    expect(resolveOperationalEventLabel("En gate SPIA")).toBe("Llegó a la entrada de SPIA");
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      timeline: [
+        {
+          title: "En gate SPIA",
+          detail: "Posición en la entrada o salida del puerto.",
+          at: "2026-09-13T12:51:00Z",
+        },
+      ],
+    })!;
+    const live = buildContainerLiveState(minimalRow(), twin);
+    expect(live.timeline[0]?.title).toBe("Llegó a la entrada de SPIA");
+    expect(live.timeline[0]?.detail).toMatch(/entrada o salida/i);
+  });
+
+  it("TEST AF: pure AT_GATE without metadata → En ingreso al puerto", () => {
+    expect(resolveOperationalEventLabel("AT_GATE")).toBe("En ingreso al puerto");
   });
 });

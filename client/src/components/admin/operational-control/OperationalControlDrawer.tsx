@@ -212,16 +212,14 @@ export function OperationalControlDrawer({
                     />
                     <OperationalEtaHero
                       size="lg"
-                      time={
-                        view.eta_display.isExpired
-                          ? formatEtaFromView(view)
-                          : view.eta_display.timeLabel === "Sin ETA"
-                            ? "—"
-                            : formatEtaFromView(view)
-                      }
+                      time={formatEtaReferenceFromView(view)}
                       corridorName={corridorLabel}
                       source={view.eta_source}
-                      expired={view.eta_display.isExpired || view.eta_display.timeLabel === "ETA vencido"}
+                      expired={Boolean(
+                        view.eta_expired ||
+                          view.eta_display.isExpired ||
+                          view.eta_display.subLabel === "ETA vencido",
+                      )}
                     />
                   </div>
 
@@ -504,21 +502,21 @@ export function OperationalControlDrawer({
   );
 }
 
-function formatEtaFromView(view: OperationalDrawerViewModel): string {
-  if (view.eta_display.isExpired) {
-    const iso = view.inferred_truth.expected_arrival_cdr;
-    if (iso) {
-      const hero = formatEtaHero(iso);
-      return hero !== "—" ? hero : "ETA vencido";
-    }
-    return "ETA vencido";
-  }
+function formatEtaReferenceFromView(view: OperationalDrawerViewModel): string {
   const iso =
+    view.eta_reference_iso ||
     view.inferred_truth.expected_arrival_cdr ||
-    (view.eta_display.isWeakFallback ? null : view.declared_truth.scheduled_at);
+    (view.eta_display.isWeakFallback ? view.declared_truth.scheduled_at : null);
   if (iso) {
     const hero = formatEtaHero(iso);
     if (hero !== "—") return hero;
   }
-  return view.eta_display.timeLabel;
+  if (
+    view.eta_display.timeLabel &&
+    view.eta_display.timeLabel !== "Sin ETA" &&
+    view.eta_display.timeLabel !== "ETA vencido"
+  ) {
+    return view.eta_display.timeLabel;
+  }
+  return "—";
 }

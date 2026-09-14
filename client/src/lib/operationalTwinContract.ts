@@ -31,7 +31,7 @@ export const OPERATIONAL_EVENT_LABELS: Record<string, string> = {
   UNKNOWN: "Posición fuera de nodos conocidos",
   GPS_LOST: "Señal GPS perdida",
   GPS_OFFLINE: "Señal GPS perdida",
-  ENTERED_PORT: "Ingreso al puerto",
+  ENTERED_PORT: "Dentro del puerto",
   EXIT_PORT: "Salida de puerto",
   AT_CDR: "En CDR",
   IN_TRANSIT: "En tránsito",
@@ -164,7 +164,8 @@ export function resolveGpsStatusLabel(value?: string | null): string {
 
 /**
  * Humanize event/timeline titles. Preserves useful backend prose.
- * AT_GATE + SPIA context → "Llegó a la entrada de SPIA".
+ * AT_GATE + event-owned SPIA context → "Llegó a la entrada de SPIA".
+ * Never uses current_location — only raw title / optional event context.
  */
 export function resolveOperationalEventLabel(
   rawTitle?: string | null,
@@ -173,10 +174,15 @@ export function resolveOperationalEventLabel(
   const raw = rawTitle?.trim();
   if (!raw) return "Evento";
 
+  // Deterministic SPIA gate prose from the event text itself
+  if (/\ben\s+gate\s+spia\b|\bgate\s+spia\b|\bspia\s+gate\b/i.test(raw)) {
+    return "Llegó a la entrada de SPIA";
+  }
+
   const code = normalizeOperationalPhaseCode(raw);
   if (code === "AT_GATE") {
     const node = `${context?.nodeCode ?? ""} ${context?.nodeName ?? ""}`.toUpperCase();
-    if (/\bSPIA\b/.test(node) || /SPIA/.test(raw.toUpperCase())) {
+    if (/\bSPIA\b/.test(node) || /\bSPIA\b/.test(raw.toUpperCase())) {
       return "Llegó a la entrada de SPIA";
     }
     return OPERATIONAL_EVENT_LABELS.AT_GATE;
@@ -429,6 +435,24 @@ export function resolveEtaSourceKind(input: {
 export function etaSourceBadgeLabel(kind?: EtaSourceKind | null): string {
   if (!kind) return ETA_SOURCE_BADGE_LABELS.estimacion;
   return ETA_SOURCE_BADGE_LABELS[kind] ?? ETA_SOURCE_BADGE_LABELS.estimacion;
+}
+
+/** Badge when ETA is expired — never bare "ETA vencido" duplicate of hero. */
+export function etaSourceExpiredBadgeLabel(kind?: EtaSourceKind | null): string {
+  switch (kind) {
+    case "ia":
+      return "IA Rutafy vencida";
+    case "ventana":
+      return "Ventana vencida";
+    case "programacion":
+      return "Programación vencida";
+    case "gps":
+      return "Seguimiento GPS vencido";
+    case "estimacion_rutafy":
+      return "Estimación Rutafy vencida";
+    default:
+      return "Estimación vencida";
+  }
 }
 
 export function resolveDriverIdentity(twin: OperationalDigitalTwin | null | undefined): {

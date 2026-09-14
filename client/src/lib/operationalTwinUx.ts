@@ -16,6 +16,7 @@ import {
   journeyTrackingModeLabel,
   resolveCorridorLabel,
   resolveEtaSourceKind,
+  etaSourceExpiredBadgeLabel,
   resolveOperationalEventLabel,
   resolveOperationalPhaseLabel,
   resolveTechnicalGpsStatus,
@@ -213,7 +214,8 @@ export function resolveRiskPresentation(
 
 /**
  * Drawer risk: do not invent "Retraso"; do not treat timeline GPS_LOST as active alert.
- * Does not rewrite twin.risk.reasons; filters contradictory GPS copy for display.
+ * Does not rewrite twin.risk.reasons; filters contradictory GPS / NORMAL vs NEGATIVE copy.
+ * Row band alone (e.g. GPS OFFLINE → delayed) must not invent a "Retraso" reason.
  */
 export function resolveDrawerRiskPresentation(
   row: OperationalControlContainerRow,
@@ -228,6 +230,7 @@ export function resolveDrawerRiskPresentation(
   for (const a of rawAlerts) {
     const lower = a.toLowerCase();
     const code = a.trim().toUpperCase().replace(/\s+/g, "_");
+    // Historical event codes alone are not active alerts
     if (code === "GPS_LOST" || code === "UNKNOWN") continue;
     if (/gps|offline|señal/.test(lower)) {
       if (technical === "OFFLINE" || technical === "STALE") {
@@ -240,34 +243,64 @@ export function resolveDrawerRiskPresentation(
     if (!activeAlerts.includes(human)) activeAlerts.push(human);
   }
 
-  const reasons: string[] = [];
+  type ReasonKind = "negative" | "normal" | "skip";
+  const classify = (r: string): { kind: ReasonKind; display: string } => {
+    const lower = r.toLowerCase().trim();
+    if (!lower) return { kind: "skip", display: "" };
+    // GPS belongs in GPS / alerts blocks — never risk reasons in drawer
+    if (/gps|offline|señal/.test(lower)) return { kind: "skip", display: "" };
+    if (
+      /operaci[oó]n en curso normal|sin retrasos|operaci[oó]n normal|todo normal|sin alerta|sin novedad/.test(
+        lower,
+      )
+    ) {
+      return { kind: "normal", display: r.trim() };
+    }
+    if (/eta|vencid/.test(lower)) return { kind: "negative", display: "ETA vencido" };
+    if (/delay|retraso/.test(lower)) return { kind: "negative", display: "Retraso" };
+    if (/congest|tr[aá]fico|traffic/.test(lower)) {
+      return { kind: "negative", display: "Congestión" };
+    }
+    if (/riesgo|critical|cr[ií]tico|alto/.test(lower)) {
+      return { kind: "negative", display: r.trim() };
+    }
+    // Unknown operational reason — treat as negative signal for conflict resolution
+    return { kind: "negative", display: r.trim() };
+  };
+
+  const negatives: string[] = [];
+  const normals: string[] = [];
   for (const r of twinReasons) {
-    const lower = r.toLowerCase();
-    if (/gps\s*activo|online/.test(lower) && (technical === "OFFLINE" || technical === "STALE")) {
-      continue;
-    }
-    if (/gps|offline|señal/.test(lower)) {
-      continue;
-    }
-    if (/eta|vencid/.test(lower) && !reasons.includes("ETA vencido")) {
-      reasons.push("ETA vencido");
-    } else if (/delay|retraso/.test(lower) && !reasons.includes("Retraso")) {
-      reasons.push("Retraso");
-    } else if (/congest|tráfico|traffic/.test(lower) && !reasons.includes("Congestión")) {
-      reasons.push("Congestión");
-    } else if (r.trim() && !reasons.includes(r.trim())) {
-      reasons.push(r.trim());
+    const { kind, display } = classify(r);
+    if (kind === "skip" || !display) continue;
+    if (kind === "normal") {
+      if (!normals.includes(display)) normals.push(display);
+    } else if (!negatives.includes(display)) {
+      negatives.push(display);
     }
   }
 
+  // If NEGATIVE + NORMAL coexist, keep only NEGATIVE (do not mutate payload).
+  const reasons = negatives.length > 0 ? negatives : normals;
+
   let label = "Normal";
   let emoji = "🟢";
-  if (band === "critical") {
+  if (band === "critical" || negatives.some((r) => /cr[ií]tico|critical|riesgo/i.test(r))) {
     label = "Riesgo";
     emoji = "🔴";
-  } else if (band === "delayed" || band === "upcoming" || reasons.length > 0 || activeAlerts.length > 0) {
+  } else if (negatives.length > 0 || activeAlerts.length > 0) {
+    // Atención from operational negatives or real alerts — not from inventing Retraso.
+    // Row band delayed solely due to GPS OFFLINE without negatives still → Atención if GPS alert.
     label = "Atención";
     emoji = "🟡";
+  } else if (band === "delayed" || band === "upcoming") {
+    // Band from row (may be GPS OFFLINE) without operational reasons:
+    // Atención is OK; do NOT invent "Retraso".
+    label = "Atención";
+    emoji = "🟡";
+  } else if (normals.length > 0) {
+    label = "Normal";
+    emoji = "🟢";
   }
 
   return {
@@ -506,8 +539,10 @@ export function buildContainerLiveState(
     currentNodeName,
     nextNodeName,
     minutesToNext,
-    etaHero: etaExpired ? "ETA vencido" : etaHeroFromDisplay(etaDisplay.timeLabel, etaIso),
-    etaSubLabel: etaExpired ? "ETA vencido" : etaDisplay.subLabel || "",
+    etaHero: etaHeroFromDisplay(etaDisplay.timeLabel, etaIso),
+    etaSubLabel: etaExpired
+      ? etaSourceExpiredBadgeLabel(etaSource)
+      : etaDisplay.subLabel || "",
     etaExpired,
     etaSource,
     corridorName,
