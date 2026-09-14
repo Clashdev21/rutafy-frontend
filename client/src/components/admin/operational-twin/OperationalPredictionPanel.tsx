@@ -27,11 +27,19 @@ export function buildOperationalPredictionItems(view: OperationalDrawerViewModel
   }
 
   const nextPoint =
+    view.next_node_label ||
     view.next_expected_step_label ||
     view.inferred_truth.next_expected_event ||
     view.next_step;
-  if (nextPoint && String(nextPoint).trim()) {
-    items.push(`Próximo evento: ${resolveOperationalEventLabel(String(nextPoint))}`);
+  if (nextPoint && String(nextPoint).trim() && nextPoint !== "Sin destino") {
+    // Prefer already-resolved live next (Dentro del puerto); avoid re-humanizing codes only.
+    const display =
+      view.next_node_label && view.next_node_label !== "Sin destino"
+        ? view.next_node_label
+        : resolveOperationalEventLabel(String(nextPoint));
+    if (display && display !== "Evento") {
+      items.push(`Próximo evento: ${display}`);
+    }
   }
 
   return items;

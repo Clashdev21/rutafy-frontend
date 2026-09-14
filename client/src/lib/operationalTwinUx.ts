@@ -17,6 +17,7 @@ import {
   resolveCorridorLabel,
   resolveEtaSourceKind,
   etaSourceExpiredBadgeLabel,
+  resolveNextOperationalStepLabel,
   resolveOperationalEventLabel,
   resolveOperationalPhaseLabel,
   resolveTechnicalGpsStatus,
@@ -227,6 +228,7 @@ export function resolveDrawerRiskPresentation(
   const rawAlerts = [...(twin?.alerts ?? []), ...(row.alerts ?? [])];
 
   const activeAlerts: string[] = [];
+  const operationalAlerts: string[] = [];
   for (const a of rawAlerts) {
     const lower = a.toLowerCase();
     const code = a.trim().toUpperCase().replace(/\s+/g, "_");
@@ -241,6 +243,7 @@ export function resolveDrawerRiskPresentation(
     }
     const human = resolveOperationalEventLabel(a);
     if (!activeAlerts.includes(human)) activeAlerts.push(human);
+    if (!operationalAlerts.includes(human)) operationalAlerts.push(human);
   }
 
   type ReasonKind = "negative" | "normal" | "skip";
@@ -283,25 +286,20 @@ export function resolveDrawerRiskPresentation(
   // If NEGATIVE + NORMAL coexist, keep only NEGATIVE (do not mutate payload).
   const reasons = negatives.length > 0 ? negatives : normals;
 
+  // Operational risk title: GPS alerts and row band alone must NOT elevate.
   let label = "Normal";
   let emoji = "🟢";
   if (band === "critical" || negatives.some((r) => /cr[ií]tico|critical|riesgo/i.test(r))) {
     label = "Riesgo";
     emoji = "🔴";
-  } else if (negatives.length > 0 || activeAlerts.length > 0) {
-    // Atención from operational negatives or real alerts — not from inventing Retraso.
-    // Row band delayed solely due to GPS OFFLINE without negatives still → Atención if GPS alert.
-    label = "Atención";
-    emoji = "🟡";
-  } else if (band === "delayed" || band === "upcoming") {
-    // Band from row (may be GPS OFFLINE) without operational reasons:
-    // Atención is OK; do NOT invent "Retraso".
+  } else if (negatives.length > 0 || operationalAlerts.length > 0) {
     label = "Atención";
     emoji = "🟡";
   } else if (normals.length > 0) {
     label = "Normal";
     emoji = "🟢";
   }
+  // band delayed/upcoming from GPS OFFLINE alone → stay Normal (GPS shown separately)
 
   return {
     risk: { band, emoji, label, reasons },
@@ -449,17 +447,15 @@ export function buildContainerLiveState(
       row.declared_port,
   );
 
-  const nextRaw =
-    twin?.next_node_label ||
-    twin?.next_expected_step?.label ||
-    twin?.journey_progress?.next_step ||
-    twin?.inferred_truth.next_expected_event ||
-    row.destination;
-  const nextTrimmed = nextRaw != null ? String(nextRaw).trim() : "";
-  // Never call resolveOperationalEventLabel on empty — it returns "Evento".
-  const nextNodeName = nextTrimmed
-    ? resolveOperationalEventLabel(nextTrimmed) || humanizeNodeName(nextTrimmed)
-    : "Sin destino";
+  const nextNodeName = resolveNextOperationalStepLabel({
+    currentPhase: twin?.current_phase,
+    nextNodeLabel: twin?.next_node_label,
+    nextExpectedStepKey: twin?.next_expected_step?.key,
+    nextExpectedStepLabel: twin?.next_expected_step?.label,
+    journeyNextStep: twin?.journey_progress?.next_step,
+    inferredNextEvent: twin?.inferred_truth.next_expected_event,
+    destinationFallback: row.destination,
+  });
 
   const twinEtaAt = operationalEtaAt(twin?.eta);
   const inferredArrival = twin?.inferred_truth.expected_arrival_cdr?.trim() || null;

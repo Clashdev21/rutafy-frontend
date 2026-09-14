@@ -13,6 +13,7 @@ import {
   resolveEtaSourceKind,
   resolveGpsStatusLabel,
   resolveJourneyStateLabel,
+  resolveNextOperationalStepLabel,
   resolveOperationalEventLabel,
   resolveOperationalMapMarker,
   resolveOperationalPhaseLabel,
@@ -653,8 +654,8 @@ describe("Sprint 3C.5G UX presentation", () => {
   it("TEST AD: GPS OFFLINE without retraso reason does not invent Retraso", () => {
     const twin = normalizeOperationalDigitalTwin({
       ...e2ePayload,
-      alerts: [],
-      risk: { level: "low", reasons: ["GPS activo"] },
+      alerts: ["GPS offline"],
+      risk: { level: "low", reasons: ["Sin retrasos detectados", "Operación en curso normal"] },
       observed_truth: {
         ...e2ePayload.observed_truth,
         technical_gps_status: "OFFLINE",
@@ -662,10 +663,12 @@ describe("Sprint 3C.5G UX presentation", () => {
       gps_status: "OFFLINE",
     })!;
     const drawer = resolveDrawerRiskPresentation(
-      minimalRow({ alerts: [], gps_status: "OFFLINE" }),
+      minimalRow({ alerts: ["GPS offline"], gps_status: "OFFLINE" }),
       twin,
     );
     expect(drawer.risk.reasons).not.toContain("Retraso");
+    expect(drawer.risk.label).toBe("Normal");
+    expect(drawer.activeAlerts).toContain("Señal GPS perdida");
     expect(resolveGpsStatusLabel(resolveTechnicalGpsStatus(twin))).toBe("Sin señal");
   });
 
@@ -688,5 +691,112 @@ describe("Sprint 3C.5G UX presentation", () => {
 
   it("TEST AF: pure AT_GATE without metadata → En ingreso al puerto", () => {
     expect(resolveOperationalEventLabel("AT_GATE")).toBe("En ingreso al puerto");
+  });
+
+  it("TEST 3C.5G.2-A: AT_GATE + ENTERED_PORT → Dentro del puerto", () => {
+    expect(
+      resolveNextOperationalStepLabel({
+        currentPhase: "AT_GATE",
+        inferredNextEvent: "ENTERED_PORT",
+      }),
+    ).toBe("Dentro del puerto");
+  });
+
+  it("TEST 3C.5G.2-B: AT_GATE + ambiguous Ingreso al puerto → Dentro del puerto", () => {
+    expect(
+      resolveNextOperationalStepLabel({
+        currentPhase: "AT_GATE",
+        nextExpectedStepLabel: "Ingreso al puerto",
+      }),
+    ).toBe("Dentro del puerto");
+    expect(
+      resolveNextOperationalStepLabel({
+        currentPhase: "AT_GATE",
+        nextExpectedStepLabel: "Ingreso al puerto",
+      }),
+    ).not.toBe("Ingreso al puerto");
+  });
+
+  it("TEST 3C.5G.2-C: canonical ENTERED_PORT wins over ambiguous label", () => {
+    expect(
+      resolveNextOperationalStepLabel({
+        currentPhase: "AT_GATE",
+        nextExpectedStepLabel: "Ingreso al puerto",
+        nextNodeLabel: "Ingreso al puerto",
+        inferredNextEvent: "ENTERED_PORT",
+      }),
+    ).toBe("Dentro del puerto");
+  });
+
+  it("TEST 3C.5G.2-D: GPS offline + GPS alert + NORMAL reasons → Normal risk", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      alerts: ["Señal GPS perdida"],
+      risk: {
+        level: "low",
+        reasons: ["Sin retrasos detectados", "Operación en curso normal"],
+      },
+    })!;
+    const drawer = resolveDrawerRiskPresentation(
+      minimalRow({ alerts: ["Señal GPS perdida"], gps_status: "OFFLINE", risk_band: "delayed" }),
+      twin,
+    );
+    expect(drawer.risk.label).toBe("Normal");
+    expect(drawer.risk.reasons).toEqual(
+      expect.arrayContaining(["Sin retrasos detectados", "Operación en curso normal"]),
+    );
+    expect(drawer.activeAlerts).toContain("Señal GPS perdida");
+    expect(resolveGpsStatusLabel(resolveTechnicalGpsStatus(twin))).toBe("Sin señal");
+  });
+
+  it("TEST 3C.5G.2-E: real negative risk + GPS offline preserves Atención", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      alerts: ["GPS offline"],
+      risk: { level: "medium", reasons: ["Retraso"] },
+    })!;
+    const drawer = resolveDrawerRiskPresentation(
+      minimalRow({ alerts: ["GPS offline"], gps_status: "OFFLINE" }),
+      twin,
+    );
+    expect(drawer.risk.label).toBe("Atención");
+    expect(drawer.risk.reasons).toContain("Retraso");
+    expect(drawer.activeAlerts).toContain("Señal GPS perdida");
+  });
+
+  it("TEST 3C.5G.2-F: NORMAL + NEGATIVE → only negatives", () => {
+    const twin = normalizeOperationalDigitalTwin({
+      ...e2ePayload,
+      alerts: [],
+      risk: {
+        level: "medium",
+        reasons: ["Operación en curso normal", "Retraso"],
+      },
+      observed_truth: {
+        ...e2ePayload.observed_truth,
+        technical_gps_status: "ONLINE",
+      },
+      gps_status: "ONLINE",
+    })!;
+    const drawer = resolveDrawerRiskPresentation(
+      minimalRow({ alerts: [], gps_status: "ONLINE", risk_band: "normal" }),
+      twin,
+    );
+    expect(drawer.risk.reasons).toContain("Retraso");
+    expect(drawer.risk.reasons.some((r) => /operaci[oó]n en curso normal/i.test(r))).toBe(false);
+  });
+
+  it("TEST 3C.5G.2-G: UNKNOWN histórico → Posición no clasificada", () => {
+    expect(resolveOperationalEventLabel("UNKNOWN")).toBe("Posición no clasificada");
+  });
+
+  it("TEST 3C.5G.2-H: AT_GATE histórico con SPIA → Llegó a la entrada de SPIA", () => {
+    expect(resolveOperationalEventLabel("En gate SPIA")).toBe("Llegó a la entrada de SPIA");
+    expect(
+      resolveOperationalEventLabel("AT_GATE", {
+        nodeCode: "SPIA_GATE",
+        nodeName: "SPIA Entrada/Salida",
+      }),
+    ).toBe("Llegó a la entrada de SPIA");
   });
 });

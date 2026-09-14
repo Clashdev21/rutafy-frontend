@@ -26,6 +26,7 @@ import {
   resolveDriverIdentity,
   resolveEtaSourceKind,
   resolveJourneyStateLabel,
+  resolveNextOperationalStepLabel,
   resolveOperationalEventLabel,
   resolveOperationalPhaseLabel,
   resolveTechnicalGpsStatus,
@@ -250,7 +251,16 @@ export function buildDrawerViewFromDigitalTwin(
       live?.currentNodeName ??
       twin.current_location?.name ??
       twin.current_node_label,
-    next_node_label: live?.nextNodeName ?? twin.next_node_label,
+    next_node_label:
+      live?.nextNodeName ??
+      resolveNextOperationalStepLabel({
+        currentPhase: twin.current_phase,
+        nextNodeLabel: twin.next_node_label,
+        nextExpectedStepKey: twin.next_expected_step?.key,
+        nextExpectedStepLabel: twin.next_expected_step?.label,
+        journeyNextStep: twin.journey_progress?.next_step,
+        inferredNextEvent: twin.inferred_truth.next_expected_event,
+      }),
     minutes_to_next: live?.minutesToNext ?? null,
     route_nodes: live?.routeNodes ?? [],
     journey_phases: live?.journeyPhases ?? [],

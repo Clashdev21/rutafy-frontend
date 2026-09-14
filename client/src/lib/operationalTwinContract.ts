@@ -28,7 +28,7 @@ export const OPERATIONAL_EVENT_LABELS: Record<string, string> = {
   DISPATCH_CREATED: "Despacho registrado",
   DISPATCHED: "Despacho registrado",
   AT_GATE: "En ingreso al puerto",
-  UNKNOWN: "Posición fuera de nodos conocidos",
+  UNKNOWN: "Posición no clasificada",
   GPS_LOST: "Señal GPS perdida",
   GPS_OFFLINE: "Señal GPS perdida",
   ENTERED_PORT: "Dentro del puerto",
@@ -118,6 +118,87 @@ export function isPortIngressPhase(currentPhase?: string | null): boolean {
 /** AT_GATE is ingress; ENTERED_PORT remains a distinct phase. */
 export function isAtGateNotEnteredPort(currentPhase?: string | null): boolean {
   return isAtGatePhase(currentPhase);
+}
+
+/**
+ * True when value is AT_GATE or Spanish synonyms of "still at gate / entering".
+ * Used so next step does not repeat the current ingress microstate.
+ */
+export function isPortIngressSynonym(value?: string | null): boolean {
+  if (value == null || String(value).trim() === "") return false;
+  const code = normalizeOperationalPhaseCode(value);
+  if (code === "AT_GATE") return true;
+  const normalized = String(value)
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return (
+    normalized === "en ingreso al puerto" ||
+    normalized === "ingreso al puerto" ||
+    normalized === "ingreso puerto"
+  );
+}
+
+function looksLikeOperationalCode(value: string): boolean {
+  const trimmed = value.trim();
+  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(trimmed)) return false;
+  const code = normalizeOperationalPhaseCode(trimmed);
+  return Boolean(
+    OPERATIONAL_EVENT_LABELS[code] || OPERATIONAL_PHASE_FALLBACK_LABELS[code],
+  );
+}
+
+/**
+ * Resolve the human "next" label for Operación / Pronóstico.
+ * Prefers canonical codes over ambiguous prose; if already AT_GATE and next is
+ * an ingress synonym, advances to ENTERED_PORT → "Dentro del puerto".
+ */
+export function resolveNextOperationalStepLabel(input: {
+  currentPhase?: string | null;
+  nextNodeLabel?: string | null;
+  nextExpectedStepKey?: string | null;
+  nextExpectedStepLabel?: string | null;
+  journeyNextStep?: string | null;
+  inferredNextEvent?: string | null;
+  destinationFallback?: string | null;
+}): string {
+  const candidates = [
+    input.inferredNextEvent,
+    input.nextExpectedStepKey,
+    input.journeyNextStep,
+    input.nextExpectedStepLabel,
+    input.nextNodeLabel,
+    input.destinationFallback,
+  ]
+    .map((v) => (v != null ? String(v).trim() : ""))
+    .filter(Boolean);
+
+  if (candidates.length === 0) return "Sin destino";
+
+  const codesFirst = [
+    ...candidates.filter(looksLikeOperationalCode),
+    ...candidates.filter((c) => !looksLikeOperationalCode(c)),
+  ];
+  // de-dupe preserving order
+  const ordered: string[] = [];
+  for (const c of codesFirst) {
+    if (!ordered.includes(c)) ordered.push(c);
+  }
+
+  const picked = ordered[0];
+  const atGate = isAtGatePhase(input.currentPhase);
+
+  if (atGate && isPortIngressSynonym(picked)) {
+    return OPERATIONAL_EVENT_LABELS.ENTERED_PORT;
+  }
+
+  const labeled = resolveOperationalEventLabel(picked);
+  if (atGate && isPortIngressSynonym(labeled)) {
+    return OPERATIONAL_EVENT_LABELS.ENTERED_PORT;
+  }
+
+  return labeled || "Sin destino";
 }
 
 export function journeyTrackingModeLabel(
