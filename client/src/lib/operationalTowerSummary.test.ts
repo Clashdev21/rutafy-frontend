@@ -175,7 +175,6 @@ describe("Sprint 3D.2 — +Filtro availability", () => {
       "program",
       "driver",
       "plate",
-      "date",
     ]);
     expect(addVisibleFilter(["client", "status"], "client")).toEqual(["client", "status"]);
     expect(addVisibleFilter(["client"], "port")).toEqual(["client", "port"]);

@@ -23,6 +23,7 @@ import {
   resolveTechnicalGpsStatus,
   type EtaSourceKind,
 } from "@/lib/operationalTwinContract";
+import { operationalRowIdentity } from "@/lib/operationalRowIdentity";
 
 export type RiskPresentation = {
   band: RiskBand;
@@ -599,9 +600,9 @@ export function mergeLiveStatesForAnimation(
   prev: ContainerLiveState[],
   next: ContainerLiveState[],
 ): ContainerLiveState[] {
-  const prevMap = new Map(prev.map((s) => [s.container_id, s]));
+  const prevMap = new Map(prev.map((s) => [operationalRowIdentity(s.row), s]));
   return next.map((item) => {
-    const old = prevMap.get(item.container_id);
+    const old = prevMap.get(operationalRowIdentity(item.row));
     if (!old) return item;
     if (old.heartbeatKey === item.heartbeatKey) return old;
     return item;

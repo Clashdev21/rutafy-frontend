@@ -34,7 +34,7 @@ export const ALL_TOWER_FILTER_KEYS: readonly TowerFilterKey[] = [
   "port",
   "driver",
   "plate",
-  "date",
+  // "date" retired from principal +Filtro (3D.4C Hoy/Ayer). Kept in type for 3D.4D.
 ] as const;
 
 export const DEFAULT_VISIBLE_FILTERS: readonly TowerFilterKey[] = [
@@ -63,6 +63,7 @@ export function sanitizeVisibleFilters(raw: unknown): TowerFilterKey[] {
   const out: TowerFilterKey[] = [];
   for (const item of raw) {
     if (typeof item !== "string") continue;
+    if (item === "date") continue; // 3D.4C: Hoy/Ayer replaces simple date filter
     if (!ALLOWED.has(item)) continue;
     const key = item as TowerFilterKey;
     if (seen.has(key)) continue;

@@ -5,6 +5,7 @@ import {
   OperationalControlFilters,
 } from "@/components/admin/operational-control/OperationalControlFilters";
 import { OperationalControlQuickTabs } from "@/components/admin/operational-control/OperationalControlQuickTabs";
+import { OperationalTemporalDayNav } from "@/components/admin/operational-control/OperationalTemporalDayNav";
 import { OperationalLiveContainerTable } from "@/components/admin/operational-twin/OperationalLiveContainerTable";
 import { OperationalTowerSummary } from "@/components/admin/operational-twin/OperationalTowerSummary";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,15 @@ import {
   countByQuickTab,
   filterByQuickTab,
   matchesCommandSearch,
+  type QuickTab,
 } from "@/lib/operationalControlUx";
+import { buildTemporalDayQuery, type TemporalDayNav } from "@/lib/operationalDay";
+import {
+  filterLiveStatesByRowIdentity,
+  liveStateRowIdentity,
+  operationalRowIdentity,
+} from "@/lib/operationalRowIdentity";
+import { resolveTowerEmptyMessage } from "@/lib/operationalTowerEmpty";
 import { computeTowerSummaryMetrics } from "@/lib/operationalTowerSummary";
 import {
   EMPTY_OPERATIONAL_FILTERS,
@@ -31,7 +40,6 @@ import {
 import type { ContainerLiveState } from "@/lib/operationalTwinUx";
 import { AlertTriangle, LayoutDashboard, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { QuickTab } from "@/lib/operationalControlUx";
 
 export default function AdminOperationalControlPage() {
   const [filters, setFilters] = useState<OperationalControlFiltersState>(
@@ -40,6 +48,7 @@ export default function AdminOperationalControlPage() {
   const [visibleFilters, setVisibleFilters] = useState<TowerFilterKey[]>(() =>
     loadVisibleFilters(),
   );
+  const [dayNav, setDayNav] = useState<TemporalDayNav>("today");
   const [searchQuery, setSearchQuery] = useState("");
   const [quickTab, setQuickTab] = useState<QuickTab>("all");
   const [selectedRow, setSelectedRow] = useState<OperationalControlContainerRow | null>(null);
@@ -49,6 +58,18 @@ export default function AdminOperationalControlPage() {
     saveVisibleFilters(visibleFilters);
   }, [visibleFilters]);
 
+  /**
+   * Day axis tied to poll/refresh clock: when lastUpdatedAt advances (incl. 30s poll),
+   * America/Bogota calendar day is recomputed so Hoy/Ayer roll past midnight without reload.
+   * First paint uses wall clock until the first successful fetch.
+   */
+  const [pollClock, setPollClock] = useState(() => Date.now());
+
+  const temporalQuery = useMemo(
+    () => buildTemporalDayQuery(dayNav, { now: new Date(pollClock) }),
+    [dayNav, pollClock],
+  );
+
   const apiParams = useMemo(
     () => ({
       client: filters.client !== "all" ? filters.client : undefined,
@@ -57,9 +78,9 @@ export default function AdminOperationalControlPage() {
       port: filters.port !== "all" ? filters.port : undefined,
       driver: filters.driver !== "all" ? filters.driver : undefined,
       plate: filters.plate !== "all" ? filters.plate : undefined,
-      date: filters.date.trim() || undefined,
+      ...temporalQuery,
     }),
-    [filters],
+    [filters, temporalQuery],
   );
 
   const {
@@ -73,12 +94,26 @@ export default function AdminOperationalControlPage() {
     liveStates,
   } = useOperationalTwinTower(apiParams);
 
-  /** Universo tras filtros estructurados (API + client filter). Sin search ni quickTab. */
+  useEffect(() => {
+    if (lastUpdatedAt) setPollClock(lastUpdatedAt.getTime());
+  }, [lastUpdatedAt]);
+
+  /**
+   * Structured filters only — never re-apply scheduled_at date locally in day mode (3D.4C).
+   */
+  const structuralFilters = useMemo(
+    () => ({
+      ...filters,
+      date: "",
+    }),
+    [filters],
+  );
+
+  /** Universo tras filtros estructurados. Identity = journey_id (fallback container_id). */
   const totalStates = useMemo(() => {
-    const filteredRows = clientFilterContainers(containers, filters);
-    const allowed = new Set(filteredRows.map((r) => r.container_id));
-    return liveStates.filter((s) => allowed.has(s.container_id));
-  }, [liveStates, containers, filters]);
+    const filteredRows = clientFilterContainers(containers, structuralFilters);
+    return filterLiveStatesByRowIdentity(liveStates, filteredRows);
+  }, [liveStates, containers, structuralFilters]);
 
   /** Tras search; NO incluye quickTab (segmenta solo la tabla). */
   const summaryVisibleStates = useMemo(() => {
@@ -90,9 +125,9 @@ export default function AdminOperationalControlPage() {
       filterByQuickTab(
         summaryVisibleStates.map((s) => s.row),
         quickTab,
-      ).map((r) => r.container_id),
+      ).map((r) => operationalRowIdentity(r)),
     );
-    return summaryVisibleStates.filter((s) => tabIds.has(s.container_id));
+    return summaryVisibleStates.filter((s) => tabIds.has(liveStateRowIdentity(s)));
   }, [summaryVisibleStates, quickTab]);
 
   const tabBaseRows = useMemo(
@@ -106,6 +141,12 @@ export default function AdminOperationalControlPage() {
     () => computeTowerSummaryMetrics(totalStates, summaryVisibleStates),
     [totalStates, summaryVisibleStates],
   );
+
+  const emptyMessage = resolveTowerEmptyMessage({
+    dayNav,
+    backendRowCount: containers.length,
+    visibleRowCount: filteredStates.length,
+  });
 
   const openDrawer = (state: ContainerLiveState) => {
     setSelectedRow(state.row);
@@ -141,7 +182,7 @@ export default function AdminOperationalControlPage() {
           </p>
           {lastUpdatedAt ? (
             <p className="text-xs text-gray-400 mt-1">
-              Última actualización:{" "}
+              Datos refrescados:{" "}
               {lastUpdatedAt.toLocaleTimeString("es-CO", {
                 hour: "2-digit",
                 minute: "2-digit",
@@ -165,24 +206,6 @@ export default function AdminOperationalControlPage() {
         </Button>
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-        <div className="flex-1 min-w-0">
-          <OperationalControlCommandSearch
-            rows={containers}
-            query={searchQuery}
-            onQueryChange={setSearchQuery}
-            onSelect={(row) => {
-              setSelectedRow(row);
-              setDrawerOpen(true);
-            }}
-          />
-        </div>
-        <OperationalControlFilterAddButton
-          visibleFilters={visibleFilters}
-          onAddFilter={handleAddFilter}
-        />
-      </div>
-
       {showInitialLoading ? (
         <p className="text-sm text-gray-500 py-16 text-center">Cargando torre de control…</p>
       ) : error && containers.length === 0 ? (
@@ -202,6 +225,28 @@ export default function AdminOperationalControlPage() {
           ) : null}
 
           <OperationalTowerSummary metrics={summaryMetrics} />
+
+          <div className="flex flex-wrap items-center gap-3">
+            <OperationalTemporalDayNav active={dayNav} onChange={setDayNav} />
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+            <div className="flex-1 min-w-0">
+              <OperationalControlCommandSearch
+                rows={containers}
+                query={searchQuery}
+                onQueryChange={setSearchQuery}
+                onSelect={(row) => {
+                  setSelectedRow(row);
+                  setDrawerOpen(true);
+                }}
+              />
+            </div>
+            <OperationalControlFilterAddButton
+              visibleFilters={visibleFilters}
+              onAddFilter={handleAddFilter}
+            />
+          </div>
 
           <OperationalControlFilters
             filters={filters}
@@ -225,9 +270,7 @@ export default function AdminOperationalControlPage() {
                   Cargando contenedores…
                 </p>
               ) : filteredStates.length === 0 ? (
-                <p className="text-sm text-gray-400 py-8 text-center px-4">
-                  No hay contenedores con los filtros actuales.
-                </p>
+                <p className="text-sm text-gray-400 py-8 text-center px-4">{emptyMessage}</p>
               ) : (
                 <OperationalLiveContainerTable
                   states={filteredStates}

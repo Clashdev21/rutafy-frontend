@@ -1,4 +1,4 @@
-import { OperationalEtaHero } from "@/components/admin/operational-twin/OperationalEtaHero";
+import { OperationalUpdateCell } from "@/components/admin/operational-twin/OperationalUpdateCell";
 import { OperationalJourneyBar } from "@/components/admin/operational-twin/OperationalJourneyBar";
 import { OperationalNodeFlow } from "@/components/admin/operational-twin/OperationalNodeFlow";
 import { OperationalRiskLive } from "@/components/admin/operational-twin/OperationalRiskLive";
@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { ContainerLiveState } from "@/lib/operationalTwinUx";
+import { liveStateRowIdentity } from "@/lib/operationalRowIdentity";
 import { deriveRiskBand, riskBandBarClass, riskBandRowBgClass } from "@/lib/operationalControlUx";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,10 @@ type Props = {
   states: ContainerLiveState[];
   onSelect: (state: ContainerLiveState) => void;
 };
+
+function rowKey(state: ContainerLiveState): string {
+  return liveStateRowIdentity(state);
+}
 
 function LiveRowContent({ state }: { state: ContainerLiveState }) {
   const band = deriveRiskBand(state.row);
@@ -49,12 +54,7 @@ function LiveRowContent({ state }: { state: ContainerLiveState }) {
         />
       </TableCell>
       <TableCell>
-        <OperationalEtaHero
-          time={state.etaHero}
-          corridorName={state.corridorName}
-          source={state.etaSource}
-          expired={state.etaExpired}
-        />
+        <OperationalUpdateCell row={state.row} />
       </TableCell>
       <TableCell>
         <OperationalRiskLive risk={state.risk} />
@@ -87,13 +87,7 @@ function LiveCard({ state, onSelect }: { state: ContainerLiveState; onSelect: ()
           next={state.nextNodeName}
           minutesToNext={state.minutesToNext}
         />
-        <OperationalEtaHero
-          time={state.etaHero}
-          corridorName={state.corridorName}
-          source={state.etaSource}
-          expired={state.etaExpired}
-          size="lg"
-        />
+        <OperationalUpdateCell row={state.row} />
       </div>
     </button>
   );
@@ -110,7 +104,7 @@ export function OperationalLiveContainerTable({ states, onSelect }: Props) {
               <TableHead>Contenedor</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Ubicación</TableHead>
-              <TableHead>ETA</TableHead>
+              <TableHead>Actualización</TableHead>
               <TableHead>Riesgo</TableHead>
             </TableRow>
           </TableHeader>
@@ -119,7 +113,7 @@ export function OperationalLiveContainerTable({ states, onSelect }: Props) {
               const band = deriveRiskBand(state.row);
               return (
                 <TableRow
-                  key={state.container_id}
+                  key={rowKey(state)}
                   className={cn("cursor-pointer", riskBandRowBgClass(band))}
                   onClick={() => onSelect(state)}
                 >
@@ -133,7 +127,7 @@ export function OperationalLiveContainerTable({ states, onSelect }: Props) {
 
       <div className="md:hidden space-y-3">
         {states.map((state) => (
-          <LiveCard key={state.container_id} state={state} onSelect={() => onSelect(state)} />
+          <LiveCard key={rowKey(state)} state={state} onSelect={() => onSelect(state)} />
         ))}
       </div>
     </>

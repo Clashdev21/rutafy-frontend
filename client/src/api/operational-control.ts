@@ -20,6 +20,25 @@ export type OperationalControlKpis = {
   no_signal_pct: number | null;
 };
 
+export type OperationalControlLastOperationalUpdate = {
+  observed_at?: string | null;
+  received_at?: string | null;
+  source?: string | null;
+  event_type?: string | null;
+};
+
+export type OperationalControlTemporalMeta = {
+  mode?: string | null;
+  timezone?: string | null;
+  day?: string | null;
+  from?: string | null;
+  to?: string | null;
+  limit?: number | null;
+  offset?: number | null;
+  next_offset?: number | null;
+  row_identity?: string | null;
+};
+
 export type OperationalControlContainerRow = {
   container_id: string;
   monitoring_id?: string | null;
@@ -47,7 +66,10 @@ export type OperationalControlContainerRow = {
   window_end_at?: string | null;
   driver_assignment_state?: string | null;
   gps_status?: string | null;
+  /** @deprecated Prefer last_gps_at (normalized from last_gps_at || gps_last_seen_at). */
   gps_last_seen_at?: string | null;
+  /** Canonical GPS timestamp from 3D.4B (tracking captured_at / attributable). */
+  last_gps_at?: string | null;
   scheduled_at?: string | null;
   last_updated_at?: string | null;
   history_count?: number | null;
@@ -57,6 +79,12 @@ export type OperationalControlContainerRow = {
   delay_label?: string | null;
   observed_delay?: string | null;
   alerts: string[];
+  journey_id?: string | null;
+  journey_started_at?: string | null;
+  journey_completed_at?: string | null;
+  journey_current_state?: string | null;
+  temporal_activity_at?: string | null;
+  last_operational_update?: OperationalControlLastOperationalUpdate | null;
 };
 
 export type OperationalControlLifecycleStep = {
@@ -152,6 +180,7 @@ export type OperationalControlListResult = {
   kpis: OperationalControlKpis;
   containers: OperationalControlContainerRow[];
   filter_options?: OperationalControlFilterOptions;
+  temporal?: OperationalControlTemporalMeta;
 };
 
 export type OperationalControlFilterOptions = {
@@ -163,6 +192,8 @@ export type OperationalControlFilterOptions = {
   plates: string[];
 };
 
+export type OperationalTemporalMode = "current" | "day" | "range" | "history";
+
 export type OperationalControlListParams = {
   client?: string;
   program?: string;
@@ -171,7 +202,15 @@ export type OperationalControlListParams = {
   driver?: string;
   plate?: string;
   container?: string;
+  /** @deprecated Prefer temporal_mode=day + day (3D.4C). Kept for 3D.4D. */
   date?: string;
+  temporal_mode?: OperationalTemporalMode | string;
+  day?: string;
+  timezone?: string;
+  limit?: string;
+  offset?: string;
+  from?: string;
+  to?: string;
 };
 
 function ensureApiBase(): void {
@@ -300,12 +339,45 @@ function normalizeKpis(raw: unknown): OperationalControlKpis {
   };
 }
 
+function normalizeLastOperationalUpdate(
+  raw: unknown,
+): OperationalControlLastOperationalUpdate | null {
+  if (!raw || typeof raw !== "object") return null;
+  const rec = raw as Record<string, unknown>;
+  const observed_at = pick(rec, "observed_at", toOptionalString);
+  const received_at = pick(rec, "received_at", toOptionalString);
+  const source = pick(rec, "source", toOptionalString);
+  const event_type = pick(rec, "event_type", toOptionalString);
+  if (!observed_at && !received_at && !source && !event_type) return null;
+  return { observed_at, received_at, source, event_type };
+}
+
+function normalizeTemporalMeta(raw: unknown): OperationalControlTemporalMeta | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const rec = raw as Record<string, unknown>;
+  return {
+    mode: pick(rec, "mode", toOptionalString),
+    timezone: pick(rec, "timezone", toOptionalString),
+    day: pick(rec, "day", toOptionalString),
+    from: pick(rec, "from", toOptionalString),
+    to: pick(rec, "to", toOptionalString),
+    limit: pick(rec, "limit", toFiniteNumber),
+    offset: pick(rec, "offset", toFiniteNumber),
+    next_offset: pick(rec, "next_offset", toFiniteNumber),
+    row_identity: pick(rec, "row_identity", toOptionalString),
+  };
+}
+
 function normalizeContainerRow(raw: unknown): OperationalControlContainerRow | null {
   if (!raw || typeof raw !== "object") return null;
   const rec = raw as Record<string, unknown>;
   const container_id =
     pick(rec, "container_id", toOptionalString) ?? pick(rec, "id", toOptionalString);
   if (!container_id) return null;
+
+  const lastGps =
+    pick(rec, "last_gps_at", toOptionalString) ??
+    pick(rec, "gps_last_seen_at", toOptionalString);
 
   return {
     container_id,
@@ -357,7 +429,8 @@ function normalizeContainerRow(raw: unknown): OperationalControlContainerRow | n
       pick(rec, "window_end_at", toOptionalString) ?? pick(rec, "window_end", toOptionalString),
     driver_assignment_state: pick(rec, "driver_assignment_state", toOptionalString),
     gps_status: pick(rec, "gps_status", toOptionalString),
-    gps_last_seen_at: pick(rec, "gps_last_seen_at", toOptionalString),
+    last_gps_at: lastGps,
+    gps_last_seen_at: lastGps,
     scheduled_at: pick(rec, "scheduled_at", toOptionalString),
     last_updated_at: pick(rec, "last_updated_at", toOptionalString),
     history_count: pick(rec, "history_count", toFiniteNumber),
@@ -371,6 +444,12 @@ function normalizeContainerRow(raw: unknown): OperationalControlContainerRow | n
     delay_label: pick(rec, "delay_label", toOptionalString),
     observed_delay: pick(rec, "observed_delay", toOptionalString),
     alerts: normalizeAlerts(rec.alerts),
+    journey_id: pick(rec, "journey_id", toOptionalString),
+    journey_started_at: pick(rec, "journey_started_at", toOptionalString),
+    journey_completed_at: pick(rec, "journey_completed_at", toOptionalString),
+    journey_current_state: pick(rec, "journey_current_state", toOptionalString),
+    temporal_activity_at: pick(rec, "temporal_activity_at", toOptionalString),
+    last_operational_update: normalizeLastOperationalUpdate(rec.last_operational_update),
   };
 }
 
@@ -632,6 +711,7 @@ export async function getOperationalControlList(
       kpis,
       containers,
       filter_options: normalizeFilterOptions(data.filter_options ?? data.filters),
+      temporal: normalizeTemporalMeta(data.temporal),
     };
   } catch (err) {
     if (axios.isAxiosError(err) && err.response) {
