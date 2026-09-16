@@ -5,11 +5,33 @@ type Props = {
   risk: RiskPresentation;
   activeAlerts?: string[];
   className?: string;
+  /** Dense tower cell: emoji + label only (+ optional alert count). */
+  compact?: boolean;
 };
 
-export function OperationalRiskLive({ risk, activeAlerts = [], className }: Props) {
+export function OperationalRiskLive({
+  risk,
+  activeAlerts = [],
+  className,
+  compact = false,
+}: Props) {
   const hasAlerts = activeAlerts.length > 0;
   const hasReasons = risk.reasons.length > 0;
+
+  if (compact) {
+    return (
+      <div className={cn("space-y-0.5", className)}>
+        <p className="text-sm font-semibold text-gray-800 whitespace-nowrap">
+          {risk.emoji} {risk.label}
+        </p>
+        {hasAlerts ? (
+          <p className="text-[10px] text-amber-700 tabular-nums">
+            {activeAlerts.length} alerta{activeAlerts.length === 1 ? "" : "s"}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className={cn("space-y-2", className)}>

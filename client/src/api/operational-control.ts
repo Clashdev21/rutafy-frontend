@@ -27,6 +27,28 @@ export type OperationalControlLastOperationalUpdate = {
   event_type?: string | null;
 };
 
+export type OperationalControlCurrentLocation = {
+  code?: string | null;
+  label?: string | null;
+  source?: string | null;
+  observed_at?: string | null;
+};
+
+export type OperationalControlContainerEquipment = {
+  quantity?: number | null;
+  size_ft?: number | null;
+  type?: string | null;
+  iso_code?: string | null;
+  raw?: string | null;
+};
+
+export type OperationalControlPlates = {
+  assigned?: string | null;
+  observed?: string | null;
+  linked_messenger?: string | null;
+  current?: string | null;
+};
+
 export type OperationalControlTemporalMeta = {
   mode?: string | null;
   timezone?: string | null;
@@ -43,10 +65,15 @@ export type OperationalControlContainerRow = {
   container_id: string;
   monitoring_id?: string | null;
   container_label?: string | null;
+  container_equipment?: OperationalControlContainerEquipment | null;
+  operation_reference?: string | null;
   client_name?: string | null;
   program_name?: string | null;
   driver_name?: string | null;
   plate?: string | null;
+  plates?: OperationalControlPlates | null;
+  phone?: string | null;
+  vehicle_type?: string | null;
   declared_port?: string | null;
   destination?: string | null;
   phase?: string | null;
@@ -71,10 +98,13 @@ export type OperationalControlContainerRow = {
   /** Canonical GPS timestamp from 3D.4B (tracking captured_at / attributable). */
   last_gps_at?: string | null;
   scheduled_at?: string | null;
+  schedule_status?: string | null;
   last_updated_at?: string | null;
+  last_location_at?: string | null;
   history_count?: number | null;
   sort_priority?: string | null;
   risk_band?: string | null;
+  risk_level?: string | null;
   driver_doc_id?: string | null;
   delay_label?: string | null;
   observed_delay?: string | null;
@@ -83,7 +113,11 @@ export type OperationalControlContainerRow = {
   journey_started_at?: string | null;
   journey_completed_at?: string | null;
   journey_current_state?: string | null;
+  journey_current_leg?: number | null;
+  journey_corridor_code?: string | null;
+  journey_tracking_mode?: string | null;
   temporal_activity_at?: string | null;
+  current_location?: OperationalControlCurrentLocation | null;
   last_operational_update?: OperationalControlLastOperationalUpdate | null;
 };
 
@@ -352,6 +386,48 @@ function normalizeLastOperationalUpdate(
   return { observed_at, received_at, source, event_type };
 }
 
+function normalizeCurrentLocation(raw: unknown): OperationalControlCurrentLocation | null {
+  if (!raw || typeof raw !== "object") return null;
+  const rec = raw as Record<string, unknown>;
+  const code = pick(rec, "code", toOptionalString);
+  const label = pick(rec, "label", toOptionalString) ?? pick(rec, "name", toOptionalString);
+  const source = pick(rec, "source", toOptionalString);
+  const observed_at = pick(rec, "observed_at", toOptionalString);
+  if (!code && !label && !source && !observed_at) return null;
+  return { code, label, source, observed_at };
+}
+
+function normalizeContainerEquipment(raw: unknown): OperationalControlContainerEquipment | null {
+  if (!raw || typeof raw !== "object") return null;
+  const rec = raw as Record<string, unknown>;
+  const quantity = pick(rec, "quantity", toFiniteNumber);
+  const size_ft = pick(rec, "size_ft", toFiniteNumber);
+  const type = pick(rec, "type", toOptionalString);
+  const iso_code = pick(rec, "iso_code", toOptionalString);
+  const equipmentRaw = pick(rec, "raw", toOptionalString);
+  if (
+    quantity == null &&
+    size_ft == null &&
+    !type &&
+    !iso_code &&
+    !equipmentRaw
+  ) {
+    return null;
+  }
+  return { quantity, size_ft, type, iso_code, raw: equipmentRaw };
+}
+
+function normalizePlates(raw: unknown): OperationalControlPlates | null {
+  if (!raw || typeof raw !== "object") return null;
+  const rec = raw as Record<string, unknown>;
+  const assigned = pick(rec, "assigned", toOptionalString);
+  const observed = pick(rec, "observed", toOptionalString);
+  const linked_messenger = pick(rec, "linked_messenger", toOptionalString);
+  const current = pick(rec, "current", toOptionalString);
+  if (!assigned && !observed && !linked_messenger && !current) return null;
+  return { assigned, observed, linked_messenger, current };
+}
+
 function normalizeTemporalMeta(raw: unknown): OperationalControlTemporalMeta | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const rec = raw as Record<string, unknown>;
@@ -379,6 +455,14 @@ function normalizeContainerRow(raw: unknown): OperationalControlContainerRow | n
     pick(rec, "last_gps_at", toOptionalString) ??
     pick(rec, "gps_last_seen_at", toOptionalString);
 
+  const plates = normalizePlates(rec.plates);
+  const plate =
+    pick(rec, "plate", toOptionalString) ??
+    pick(rec, "placa", toOptionalString) ??
+    plates?.current ??
+    plates?.assigned ??
+    null;
+
   return {
     container_id,
     monitoring_id: pick(rec, "monitoring_id", toOptionalString),
@@ -386,13 +470,18 @@ function normalizeContainerRow(raw: unknown): OperationalControlContainerRow | n
       pick(rec, "container_label", toOptionalString) ??
       pick(rec, "container", toOptionalString) ??
       pick(rec, "container_number", toOptionalString),
+    container_equipment: normalizeContainerEquipment(rec.container_equipment),
+    operation_reference: pick(rec, "operation_reference", toOptionalString),
     client_name:
       pick(rec, "client_name", toOptionalString) ?? pick(rec, "client", toOptionalString),
     program_name:
       pick(rec, "program_name", toOptionalString) ?? pick(rec, "program", toOptionalString),
     driver_name:
       pick(rec, "driver_name", toOptionalString) ?? pick(rec, "driver", toOptionalString),
-    plate: pick(rec, "plate", toOptionalString) ?? pick(rec, "placa", toOptionalString),
+    plate,
+    plates,
+    phone: pick(rec, "phone", toOptionalString),
+    vehicle_type: pick(rec, "vehicle_type", toOptionalString),
     declared_port:
       pick(rec, "declared_port", toOptionalString) ??
       pick(rec, "port", toOptionalString) ??
@@ -432,11 +521,14 @@ function normalizeContainerRow(raw: unknown): OperationalControlContainerRow | n
     last_gps_at: lastGps,
     gps_last_seen_at: lastGps,
     scheduled_at: pick(rec, "scheduled_at", toOptionalString),
+    schedule_status: pick(rec, "schedule_status", toOptionalString),
     last_updated_at: pick(rec, "last_updated_at", toOptionalString),
+    last_location_at: pick(rec, "last_location_at", toOptionalString),
     history_count: pick(rec, "history_count", toFiniteNumber),
     sort_priority:
       pick(rec, "sort_priority", toOptionalString) ?? pick(rec, "priority_band", toOptionalString),
     risk_band: pick(rec, "risk_band", toOptionalString),
+    risk_level: pick(rec, "risk_level", toOptionalString),
     driver_doc_id:
       pick(rec, "driver_doc_id", toOptionalString) ??
       pick(rec, "driver_document", toOptionalString) ??
@@ -448,7 +540,11 @@ function normalizeContainerRow(raw: unknown): OperationalControlContainerRow | n
     journey_started_at: pick(rec, "journey_started_at", toOptionalString),
     journey_completed_at: pick(rec, "journey_completed_at", toOptionalString),
     journey_current_state: pick(rec, "journey_current_state", toOptionalString),
+    journey_current_leg: pick(rec, "journey_current_leg", toFiniteNumber),
+    journey_corridor_code: pick(rec, "journey_corridor_code", toOptionalString),
+    journey_tracking_mode: pick(rec, "journey_tracking_mode", toOptionalString),
     temporal_activity_at: pick(rec, "temporal_activity_at", toOptionalString),
+    current_location: normalizeCurrentLocation(rec.current_location),
     last_operational_update: normalizeLastOperationalUpdate(rec.last_operational_update),
   };
 }
